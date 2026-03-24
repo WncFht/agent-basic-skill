@@ -27,7 +27,7 @@ export REPORT_DOWNLOAD_SAVE_DIR="${REPORT_DOWNLOAD_SAVE_DIR:-$STOCK_SKILL_WORKSP
 
 ## Preferred workflow
 1. Parse `stock_code`, optional `year`, optional `report_type`.
-2. Prefer the bundled helper script to search and download in one step:
+2. Prefer the helper script shipped with this skill to search and download in one step:
 
 ```bash
 uv run --project "$REPORT_DOWNLOAD_ROOT" python "$REPORT_DOWNLOAD_CLI" \
@@ -71,7 +71,7 @@ uv sync --project "$REPORT_DOWNLOAD_ROOT"
 
 The helper scripts require `ddgs` and `requests`.
 
-## Bundled scripts
+## Included scripts
 - `scripts/search_and_download_report.py`: official-source-first report searcher, with CNINFO / HKEXnews priority.
 - `scripts/download_report.py`: low-level downloader with retries and PDF validation.
 

@@ -1,6 +1,6 @@
 ---
 name: "jupyter-notebook"
-description: "Use when the user asks to create, scaffold, or edit Jupyter notebooks (`.ipynb`) for experiments, explorations, or tutorials; prefer the bundled templates and run the helper script `new_notebook.py` to generate a clean starting notebook."
+description: "Use when the user asks to create, scaffold, or edit Jupyter notebooks (`.ipynb`) for experiments, explorations, or tutorials; prefer the checked-in templates and run the helper script `new_notebook.py` to generate a clean starting notebook."
 ---
 
 
@@ -11,7 +11,7 @@ Create clean, reproducible Jupyter notebooks for two primary modes:
 - Experiments and exploratory analysis
 - Tutorials and teaching-oriented walkthroughs
 
-Prefer the bundled templates and the helper script for consistent structure and fewer JSON mistakes.
+Prefer the checked-in templates and the helper script for consistent structure and fewer JSON mistakes.
 
 ## When to use
 - Create a new `.ipynb` notebook from scratch.
@@ -95,7 +95,7 @@ Optional Python packages for local notebook execution:
 uv pip install jupyterlab ipykernel
 ```
 
-The bundled scaffold script uses only the Python standard library and does not require extra dependencies.
+The scaffold script shipped in this skill directory uses only the Python standard library and does not require extra dependencies.
 
 ## Environment
 No required environment variables.

@@ -1,58 +1,107 @@
 # agent-basic-skill
 
-`agent-basic-skill` 是一个独立仓库，用来承载一组可复用的 Codex 基础 skill。目标是把这些已经比较稳定的 skill 从单机 `~/.codex/skills/` 目录里拆出来，变成可以在新机器上安装、集中维护、持续更新的一套 bundle。
+`agent-basic-skill` 是一个可复用的 Codex skills 仓库。每个 skill 都直接存放在 `skills/<skill-name>/` 下，整个目录就是安装、同步和覆盖更新的最小单位。
 
-这个仓库是这批 skill 的长期源码来源。`~/.codex/skills/` 下的同名目录应当被视为安装结果、同步副本，或者临时开发镜像，而不是主维护仓库。
+这个仓库不再维护额外的仓库级安装元数据。以后安装时，直接把目标 skill 目录整体覆盖到 `~/.codex/skills/<skill-name>/` 即可。
 
-## 包含的 skill
+## 使用方法
 
-| Skill | 作用 | 关键伴随文件 |
-| --- | --- | --- |
-| `pdf` | 处理 PDF 解析、生成和版式校验相关任务 | `agents/`、`assets/`、`LICENSE.txt` |
-| `report-download` | 从官方来源优先下载 A 股和港股财报 | `scripts/`、`pyproject.toml`、`uv.lock`、`agents/` |
-| `git-commit` | 约束 Conventional Commits 风格的提交流程 | `SKILL.md` |
-| `jupyter-notebook` | 创建和整理 Jupyter Notebook | `scripts/`、`assets/`、`references/`、`agents/`、`LICENSE.txt` |
-| `frontend-slides` | 生成 HTML 幻灯片和 PPT 转网页流程 | `scripts/`、`README.md`、`MEMORY.md`、CSS/Markdown 参考文件 |
+安装单个 skill：
+
+```bash
+mkdir -p "$HOME/.codex/skills/jupyter-notebook"
+rsync -a --delete skills/jupyter-notebook/ "$HOME/.codex/skills/jupyter-notebook/"
+```
+
+刷新整个 skills 仓：
+
+```bash
+mkdir -p "$HOME/.codex/skills"
+rsync -a --delete skills/ "$HOME/.codex/skills/"
+```
+
+如果未来从 GitHub 安装，请始终安装整个 `skills/<skill-name>/` 目录，而不是只拷贝一个 `SKILL.md`，因为有些 skill 还依赖相邻脚本、模板、资源或参考文档。
+
+更多示例见 [INSTALL.md](INSTALL.md)。
+
+## 技能列表
+
+### [pdf](skills/pdf/SKILL.md)
+
+PDF 解析、生成与版式校验。
+
+### [report-download](skills/report-download/SKILL.md)
+
+官方来源优先的 A 股和港股财报下载。
+
+### [git-commit](skills/git-commit/SKILL.md)
+
+Conventional Commits 工作流。
+
+### [jupyter-notebook](skills/jupyter-notebook/SKILL.md)
+
+Notebook 创建、模板化与脚手架生成。
+
+### [frontend-slides](skills/frontend-slides/SKILL.md)
+
+HTML 幻灯片与 PPT 转网页。
+
+### [bilinote-video-note](skills/bilinote-video-note/SKILL.md)
+
+调用外部 `WncFht/BiliNote` 仓生成视频笔记。
+
+### [paperflow-pipeline-notes](skills/paperflow-pipeline-notes/SKILL.md)
+
+调用外部 `WncFht/paperflow` 仓并配合本地 notes 工作区。
+
+### [shuiyuan-cache-skill](skills/shuiyuan-cache-skill/SKILL.md)
+
+调用外部 `WncFht/shuiyuan_exporter` 仓并使用外部 runtime cache。
+
+### [bilibili-up-digest](skills/bilibili-up-digest/SKILL.md)
+
+调用外部 `WncFht/PulseDeck` 仓写入本地 Obsidian bilibili vault。
+
+## Thin Wrapper 说明
+
+仓库里的 wrapper skill 只保留入口文档和少量桥接脚本，真正的运行时代码仍在外部工具仓里。约束见 [docs/thin-wrapper-skills.md](docs/thin-wrapper-skills.md)。
+
+## 本地 source override
+
+wrapper skill 的外部仓路径支持本地 override。推荐做法：
+
+1. 把实际 override 文件放在 `~/.codex/state/agent-basic-skill/source-overrides.json`
+2. 或在本仓中使用一个被 `.gitignore` 忽略的 `local/source-overrides.json`
+3. 通过 `AGENT_BASIC_SKILL_SOURCE_OVERRIDES` 指向实际要使用的文件
+
+格式示例见 [local/source-overrides.example.json](local/source-overrides.example.json)。
 
 ## 目录结构
 
 ```text
 agent-basic-skill/
-├── bundle-manifest.json
 ├── INSTALL.md
 ├── README.md
-├── scripts/
-│   └── install_bundle.py
+├── docs/
+│   └── thin-wrapper-skills.md
+├── local/
+│   └── source-overrides.example.json
 ├── skills/
 │   ├── pdf/
 │   ├── report-download/
 │   ├── git-commit/
 │   ├── jupyter-notebook/
-│   └── frontend-slides/
+│   ├── frontend-slides/
+│   ├── bilinote-video-note/
+│   ├── paperflow-pipeline-notes/
+│   ├── shuiyuan-cache-skill/
+│   └── bilibili-up-digest/
 └── tests/
-    └── test_bundle.py
 ```
-
-`bundle-manifest.json` 是仓库级索引文件，记录了 bundle 中有哪些 skill、它们在仓库内的路径，以及安装和更新过程中必须保留下来的伴随文件。
-
-## 依赖说明
-
-- `pdf`：最佳路径依赖 `MINERU_API_TOKEN`；做 PDF 可视化检查时还需要 Poppler 工具，例如 `pdftoppm`。
-- `report-download`：推荐使用 `uv` 和 Python 运行仓库里的下载脚本。
-- `jupyter-notebook`：模板脚手架脚本本身只依赖 Python 标准库，但真正在本机运行 notebook 仍然需要正常的 Jupyter 环境。
-- `frontend-slides`：PPT 转换路径依赖 `python-pptx`；同时它还依赖多个必须与 `SKILL.md` 同目录分发的 Markdown 和 CSS 文件。
-
-## 安装与更新
-
-具体命令见 [INSTALL.md](INSTALL.md)，其中包括：
-
-- 从当前本地仓库安装到 `~/.codex/skills`
-- 对已有安装执行整包刷新
-- 将来发布到 GitHub 之后，如何复用 `skill-installer` 进行安装
 
 ## 验证
 
-运行下面的命令可以验证仓库结构和安装脚本是否正常：
+运行下面的命令可以验证仓库结构和 wrapper 路径解析逻辑：
 
 ```bash
 python -m unittest discover -s tests
