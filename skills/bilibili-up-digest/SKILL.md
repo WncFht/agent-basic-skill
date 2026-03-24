@@ -7,6 +7,16 @@ description: Use when the user wants to maintain daily Bilibili creator digests 
 
 这是一个 thin wrapper。真正的代码与运行逻辑位于外部 `WncFht/PulseDeck` 仓库中；Obsidian vault、配置文件和 runtime 产物都位于当前 skill 目录之外。
 
+## 外部依赖仓库
+
+- GitHub repo: `WncFht/PulseDeck`
+- 默认 clone 路径：`$HOME/Desktop/src/PulseDeck`
+- 环境变量：`BILIBILI_UP_DIGEST_REPO`
+- source override key：`repo:WncFht/PulseDeck`
+- 安装命令：在 `agent-basic-skill` 仓根目录运行 `python scripts/install_skill.py bilibili-up-digest`
+
+安装器会读取同目录下的 `external-repos.json`；它只在显式安装时检查或 clone 外部仓，运行时 resolver 仍然只做检测不做安装。
+
 ## 先解析外部仓路径
 
 优先级：
@@ -21,6 +31,8 @@ description: Use when the user wants to maintain daily Bilibili creator digests 
 ```bash
 python scripts/resolve_pulsedeck_repo.py --json
 ```
+
+如果你需要模板形状，读取 `references/templates.md`。
 
 ## Runtime 路径
 
@@ -44,4 +56,4 @@ uv run --project "$REPO_ROOT" python scripts/build_daily_digest.py \
 
 - 每个视频仍然只保留一份 canonical note
 - 日报、UP 主索引页和主题索引页都属于 vault 内容，而不是 wrapper skill 内容
-- 如果 PulseDeck 仓不存在，应先 clone 到 `Desktop/src` 或设置 `BILIBILI_UP_DIGEST_REPO`
+- 如果 PulseDeck 仓不存在，应先运行 `python scripts/install_skill.py bilibili-up-digest`，或自行 clone 到 `Desktop/src` 后再设置 `BILIBILI_UP_DIGEST_REPO`

@@ -59,11 +59,19 @@ EXPECTED_SKILLS = {
     ],
     "shuiyuan-cache-skill": [
         "SKILL.md",
+        "external-repos.json",
         "scripts/resolve_shuiyuan_paths.py",
+        "references/output_schema.md",
+        "references/runbook.md",
+        "references/runtime_layout.md",
+        "references/topic-study-workflow.md",
+        "references/troubleshooting.md",
     ],
     "bilibili-up-digest": [
         "SKILL.md",
+        "external-repos.json",
         "scripts/resolve_pulsedeck_repo.py",
+        "references/templates.md",
     ],
 }
 WRAPPER_SKILLS = {

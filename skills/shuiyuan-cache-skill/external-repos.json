@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "repo:WncFht/shuiyuan_exporter",
+      "repo": "WncFht/shuiyuan_exporter",
+      "clone_url": "https://github.com/WncFht/shuiyuan_exporter.git",
+      "default_clone_dir": "~/Desktop/src/shuiyuan_exporter",
+      "default_detect_paths": [
+        "~/Desktop/src/shuiyuan_exporter"
+      ],
+      "env_var": "SHUIYUAN_EXPORTER_REPO",
+      "override_key": "repo:WncFht/shuiyuan_exporter",
+      "markers": [
+        "pyproject.toml",
+        "scripts/ensure_cached.py",
+        "scripts/search_forum.py"
+      ],
+      "bootstrap_hint": "Clone the repo and run uv sync --group dev from the repo root."
+    }
+  ]
+}

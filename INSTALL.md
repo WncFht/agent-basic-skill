@@ -1,10 +1,32 @@
 # Install agent-basic-skill
 
-这个仓库里的每个 `skills/<skill-name>/` 目录都是独立安装单元。安装或更新时，直接覆盖目标目录即可。
+这个仓库里的每个 `skills/<skill-name>/` 目录都是独立安装单元。安装或更新时，优先使用顶层安装器，它会在复制 skill 目录前先处理 wrapper 所需的外部依赖仓。
 
-## 本地仓库工作流
+## 推荐方式
 
 安装单个 skill：
+
+```bash
+python scripts/install_skill.py jupyter-notebook
+```
+
+安装带外部工具仓的 wrapper：
+
+```bash
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill
+```
+
+安装器的行为：
+
+- 先读取 `skills/<skill-name>/external-repos.json`
+- 按 `env var -> local override -> default_detect_paths -> default_clone_dir` 检查外部仓
+- 已存在合法仓时跳过 clone
+- 仓缺失时自动 clone 到 `default_clone_dir`
+- `~/.codex/skills/<skill-name>/` 已存在时，视为受管安装副本并整体替换
+
+## 仍可手动覆盖安装
+
+如果你明确知道外部仓已经准备好，也可以继续手动覆盖：
 
 ```bash
 mkdir -p "$HOME/.codex/skills/jupyter-notebook"
@@ -24,36 +46,7 @@ rsync -a --delete skills/ "$HOME/.codex/skills/"
 - 覆盖已存在文件
 - 删除目标目录里已经不再存在于仓库中的旧文件
 
-如果你只想看有哪些 skills，可直接查看 `skills/` 目录。
-
-## 更新已有安装
-
-拉取仓库最新变更后，重复同样的覆盖命令即可：
-
-```bash
-git pull
-rsync -a --delete skills/ "$HOME/.codex/skills/"
-```
-
-如果只刷新单个 skill：
-
-```bash
-git pull
-rsync -a --delete skills/pdf/ "$HOME/.codex/skills/pdf/"
-```
-
-## 为什么不要只复制 `SKILL.md`
-
-这个仓库里的部分 skill 不是单文件：
-
-- `jupyter-notebook` 依赖模板、参考文档和脚手架脚本
-- `report-download` 依赖 Python 脚本和 `pyproject.toml`
-- `frontend-slides` 依赖 companion markdown、CSS 和脚本
-- 几个 wrapper skill 依赖路径解析脚本
-
-所以安装时应始终复制整个 `skills/<skill-name>/` 目录。
-
-## Wrapper skill 的额外准备
+## Wrapper skill 的外部仓准备
 
 `bilinote-video-note`、`paperflow-pipeline-notes`、`shuiyuan-cache-skill`、`bilibili-up-digest` 这几个 skill 只包含入口文档和桥接脚本；真正的工具仓仍应单独放在本机，例如 `~/Desktop/src/...`。
 
@@ -72,6 +65,17 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 ```
 
 如果你就是在这个仓库里维护 skills，也可以改用被 `.gitignore` 忽略的 `local/source-overrides.json`。
+
+## 为什么不要只复制 `SKILL.md`
+
+这个仓库里的部分 skill 不是单文件：
+
+- `jupyter-notebook` 依赖模板、参考文档和脚手架脚本
+- `report-download` 依赖 Python 脚本和 `pyproject.toml`
+- `frontend-slides` 依赖 companion markdown、CSS 和脚本
+- 几个 wrapper skill 依赖路径解析脚本、参考文档和 `external-repos.json`
+
+所以安装时应始终复制整个 `skills/<skill-name>/` 目录。
 
 ## GitHub 安装方式
 

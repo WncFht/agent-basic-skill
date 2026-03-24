@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "repo:WncFht/PulseDeck",
+      "repo": "WncFht/PulseDeck",
+      "clone_url": "https://github.com/WncFht/PulseDeck.git",
+      "default_clone_dir": "~/Desktop/src/PulseDeck",
+      "default_detect_paths": [
+        "~/Desktop/src/PulseDeck",
+        "~/Desktop/src/pulsedeck"
+      ],
+      "env_var": "BILIBILI_UP_DIGEST_REPO",
+      "override_key": "repo:WncFht/PulseDeck",
+      "markers": [
+        "scripts/build_daily_digest.py",
+        "scripts/rebuild_indexes.py",
+        "SKILL.md"
+      ],
+      "bootstrap_hint": "Clone the repo and run it with uv from the repo root."
+    }
+  ]
+}

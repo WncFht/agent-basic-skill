@@ -2,7 +2,7 @@
 
 `agent-basic-skill` 是一个可复用的 Codex skills 仓库。每个 skill 都直接存放在 `skills/<skill-name>/` 下，整个目录就是安装、同步和覆盖更新的最小单位。
 
-这个仓库不再维护额外的仓库级安装元数据。以后安装时，直接把目标 skill 目录整体覆盖到 `~/.codex/skills/<skill-name>/` 即可。
+对于 `bundle-native` skill，安装时只需要复制 skill 目录本身。对于 `external-tool-wrapper` skill，仓库还会附带一个机器可读的 `external-repos.json`，用于在显式安装时确保外部依赖仓已经存在；如果默认位置已经有合法仓库，则会直接跳过 clone。
 
 ## 使用方法
 
@@ -13,6 +13,24 @@ mkdir -p "$HOME/.codex/skills/jupyter-notebook"
 rsync -a --delete skills/jupyter-notebook/ "$HOME/.codex/skills/jupyter-notebook/"
 ```
 
+或使用统一安装器：
+
+```bash
+python scripts/install_skill.py jupyter-notebook
+```
+
+安装带外部依赖仓的 wrapper：
+
+```bash
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill
+```
+
+这个命令会先检查 wrapper 声明的外部仓：
+
+- 已存在且满足 marker 时：跳过 clone
+- 不存在时：自动 clone 到文档化默认目录
+- 默认 clone 目录已存在但不是合法仓时：明确报错，不覆盖脏目录
+
 刷新整个 skills 仓：
 
 ```bash
@@ -20,7 +38,7 @@ mkdir -p "$HOME/.codex/skills"
 rsync -a --delete skills/ "$HOME/.codex/skills/"
 ```
 
-如果未来从 GitHub 安装，请始终安装整个 `skills/<skill-name>/` 目录，而不是只拷贝一个 `SKILL.md`，因为有些 skill 还依赖相邻脚本、模板、资源或参考文档。
+如果未来从 GitHub 安装，请始终安装整个 `skills/<skill-name>/` 目录，而不是只拷贝一个 `SKILL.md`，因为有些 skill 还依赖相邻脚本、模板、资源或参考文档。对于 external wrapper，还需要同时准备它声明的外部源仓。
 
 更多示例见 [INSTALL.md](INSTALL.md)。
 
@@ -66,6 +84,8 @@ HTML 幻灯片与 PPT 转网页。
 
 仓库里的 wrapper skill 只保留入口文档和少量桥接脚本，真正的运行时代码仍在外部工具仓里。约束见 [docs/thin-wrapper-skills.md](docs/thin-wrapper-skills.md)。
 
+依赖仓声明格式与安装边界见 [docs/external-repo-manifests.md](docs/external-repo-manifests.md)。
+
 ## 本地 source override
 
 wrapper skill 的外部仓路径支持本地 override。推荐做法：
@@ -83,9 +103,12 @@ agent-basic-skill/
 ├── INSTALL.md
 ├── README.md
 ├── docs/
+│   ├── external-repo-manifests.md
 │   └── thin-wrapper-skills.md
 ├── local/
 │   └── source-overrides.example.json
+├── scripts/
+│   └── install_skill.py
 ├── skills/
 │   ├── pdf/
 │   ├── report-download/
@@ -101,7 +124,7 @@ agent-basic-skill/
 
 ## 验证
 
-运行下面的命令可以验证仓库结构和 wrapper 路径解析逻辑：
+运行下面的命令可以验证仓库结构、安装器和 wrapper 路径解析逻辑：
 
 ```bash
 python -m unittest discover -s tests
