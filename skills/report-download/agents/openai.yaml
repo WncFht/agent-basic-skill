@@ -1,0 +1,4 @@
+interface:
+  display_name: "Report Download"
+  short_description: "Find and download A-share/HK annual reports"
+  default_prompt: "下载这家公司的最新或指定年份财报 PDF，并返回本地文件路径。"

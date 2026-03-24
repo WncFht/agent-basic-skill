@@ -1,0 +1,5 @@
+interface:
+  display_name: "PDF Skill"
+  short_description: "MinerU-first PDF parsing and review"
+  icon_large: "./assets/pdf.png"
+  default_prompt: "Create, edit, parse, or review this PDF. Prefer MinerU API first for structured extraction when applicable, then summarize the key output, extracted artifacts, or changes."

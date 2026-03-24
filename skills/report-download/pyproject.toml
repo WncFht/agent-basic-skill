@@ -1,0 +1,13 @@
+[project]
+name = "report-download-skill"
+version = "0.1.0"
+description = "Helpers for the Codex report-download skill"
+requires-python = ">=3.11"
+dependencies = [
+  "ddgs>=9.6.0",
+  "pypdf>=5.4.0",
+  "requests>=2.32.3",
+]
+
+[tool.uv]
+package = false
