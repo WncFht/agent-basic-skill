@@ -4,7 +4,10 @@ __pycache__/
 .DS_Store
 .tmp/
 tmp/
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
+!.codex/INSTALL.md
 openspec/
 local/source-overrides.json
 local/source-overrides.*.json

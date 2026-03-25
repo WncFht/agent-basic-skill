@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
+AGENT_INSTALL_DOC = REPO_ROOT / ".codex" / "INSTALL.md"
 EXPECTED_SKILLS = {
     "pdf": [
         "SKILL.md",
@@ -107,6 +108,12 @@ DISALLOWED_WRAPPER_NAMES = {
 
 
 class SkillRepoTests(unittest.TestCase):
+    def test_agent_install_doc_exists(self) -> None:
+        self.assertTrue(AGENT_INSTALL_DOC.exists(), msg="missing .codex/INSTALL.md")
+        content = AGENT_INSTALL_DOC.read_text(encoding="utf-8")
+        self.assertIn("~/.agents/skills", content)
+        self.assertIn("git clone https://github.com/WncFht/agent-basic-skill.git", content)
+
     def test_repo_contains_expected_skill_dirs(self) -> None:
         skill_names = {path.name for path in SKILLS_ROOT.iterdir() if path.is_dir()}
         self.assertEqual(skill_names, set(EXPECTED_SKILLS))

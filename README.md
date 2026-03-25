@@ -2,6 +2,8 @@
 
 `agent-basic-skill` 是一个可复用的 Codex skills 仓库。每个 skill 都直接存放在 `skills/<skill-name>/` 下，整个目录就是安装、同步和覆盖更新的最小单位。
 
+如果你要让外部 AGENT 通过一句固定指令完成安装，使用面向 agent 的入口文档：[`.codex/INSTALL.md`](.codex/INSTALL.md)。
+
 对于 `bundle-native` skill，安装时只需要复制 skill 目录本身。对于 `external-tool-wrapper` skill，仓库还会附带一个机器可读的 `external-repos.json`，用于在显式安装时确保外部依赖仓已经存在；如果默认位置已经有合法仓库，则会直接跳过 clone。
 
 ## 使用方法
