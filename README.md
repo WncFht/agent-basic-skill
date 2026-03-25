@@ -22,7 +22,7 @@ python scripts/install_skill.py jupyter-notebook
 安装带外部依赖仓的 wrapper：
 
 ```bash
-python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf
 ```
 
 这个命令会先检查 wrapper 声明的外部仓：
@@ -80,6 +80,10 @@ HTML 幻灯片与 PPT 转网页。
 
 调用外部 `WncFht/PulseDeck` 仓写入本地 Obsidian bilibili vault。
 
+### [video-note-render-pdf](skills/video-note-render-pdf/SKILL.md)
+
+统一 YouTube / Bilibili 视频讲义 wrapper，解析外部 runtime repo 与本地 case workspace。
+
 ## Thin Wrapper 说明
 
 仓库里的 wrapper skill 只保留入口文档和少量桥接脚本，真正的运行时代码仍在外部工具仓里。约束见 [docs/thin-wrapper-skills.md](docs/thin-wrapper-skills.md)。
@@ -118,9 +122,14 @@ agent-basic-skill/
 │   ├── bilinote-video-note/
 │   ├── paperflow-pipeline-notes/
 │   ├── shuiyuan-cache-skill/
-│   └── bilibili-up-digest/
+│   ├── bilibili-up-digest/
+│   └── video-note-render-pdf/
 └── tests/
 ```
+
+## 迁移说明
+
+旧的 `~/.codex/skills/video-note-skill` 已转为迁移来源，不再作为长期主源维护。统一入口现在是 `video-note-render-pdf`；平台差异应继续下沉到外部 runtime repo 的 adapter 层，而不是在 bundle 仓里维护两套平行 skill。
 
 ## 验证
 

@@ -1,0 +1,24 @@
+{
+  "source_url": "",
+  "platform": "",
+  "video_id": "",
+  "runtime": {
+    "repo_root": "",
+    "workspace_root": "",
+    "adapter": "",
+    "subtitle_source": "",
+    "transcript_source": "",
+    "recommended_mode": ""
+  },
+  "artifacts": {
+    "metadata": "metadata.json",
+    "preflight": "preflight.json",
+    "subtitle_probe": "subtitle_probe.json",
+    "transcriber_probe": "transcriber_probe.json",
+    "transcript_json": "transcript.json",
+    "transcript_srt": "transcript.srt",
+    "transcript_txt": "transcript.txt",
+    "note_tex": "note.tex",
+    "note_pdf": "note.pdf"
+  }
+}

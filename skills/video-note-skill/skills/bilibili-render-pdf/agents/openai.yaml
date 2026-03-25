@@ -1,4 +1,0 @@
-interface:
-  display_name: "Bilibili Render PDF"
-  short_description: "Turn a Bilibili lecture into a structured LaTeX/PDF note set."
-  default_prompt: "Use this skill to turn a Bilibili video into a high-quality LaTeX course note with extracted figures, exhaustive frame recall before selection, the original video cover on the front page, and a final synthesis chapter. Falls back to Whisper transcription when CC subtitles are unavailable."

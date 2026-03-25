@@ -50,3 +50,4 @@ wrapper 只安装轻量文件到 `~/.codex/skills/<skill-name>`。
 - `paperflow-pipeline-notes` -> `WncFht/paperflow`
 - `shuiyuan-cache-skill` -> `WncFht/shuiyuan_exporter`
 - `bilibili-up-digest` -> `WncFht/PulseDeck`
+- `video-note-render-pdf` -> `WncFht/video-note-pipeline` + local `video_notes` workspace

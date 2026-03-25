@@ -106,6 +106,77 @@ class WrapperResolutionTests(unittest.TestCase):
                 str((home / "Desktop" / "obsidian" / "bilibili").resolve()),
             )
 
+    def test_video_note_prefers_local_override_for_runtime_and_workspace(self) -> None:
+        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runtime_repo = Path(tmp_dir) / "video-note-pipeline"
+            workspace_root = Path(tmp_dir) / "video_notes"
+            runtime_repo.mkdir()
+            workspace_root.mkdir()
+            (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
+            override_path = Path(tmp_dir) / "source-overrides.json"
+            override_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "sources": {
+                            "repo:WncFht/video-note-pipeline": str(runtime_repo),
+                            "workspace:video-notes": str(workspace_root),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = run_script(
+                script,
+                env={"AGENT_BASIC_SKILL_SOURCE_OVERRIDES": str(override_path)},
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["runtime_repo"], str(runtime_repo.resolve()))
+            self.assertEqual(payload["workspace_root"], str(workspace_root.resolve()))
+            self.assertEqual(payload["resolution"]["runtime_repo"], "local-override")
+            self.assertEqual(payload["resolution"]["workspace_root"], "local-override")
+
+    def test_video_note_prefers_env_for_runtime_and_workspace(self) -> None:
+        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runtime_repo = Path(tmp_dir) / "video-note-pipeline"
+            workspace_root = Path(tmp_dir) / "video_notes"
+            runtime_repo.mkdir()
+            workspace_root.mkdir()
+            (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
+            result = run_script(
+                script,
+                env={
+                    "VIDEO_NOTE_PIPELINE_REPO": str(runtime_repo),
+                    "VIDEO_NOTE_WORKSPACE_ROOT": str(workspace_root),
+                },
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["runtime_repo"], str(runtime_repo.resolve()))
+            self.assertEqual(payload["workspace_root"], str(workspace_root.resolve()))
+            self.assertEqual(payload["resolution"]["runtime_repo"], "env:VIDEO_NOTE_PIPELINE_REPO")
+            self.assertEqual(payload["resolution"]["workspace_root"], "env:VIDEO_NOTE_WORKSPACE_ROOT")
+
+    def test_video_note_uses_default_candidates(self) -> None:
+        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            home = Path(tmp_dir)
+            runtime_repo = home / "Desktop" / "src" / "video-note-pipeline"
+            workspace_root = home / "Desktop" / "src" / "video_notes"
+            runtime_repo.mkdir(parents=True)
+            workspace_root.mkdir(parents=True)
+            (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
+            result = run_script(script, env={"HOME": str(home)})
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["runtime_repo"], str(runtime_repo.resolve()))
+            self.assertEqual(payload["workspace_root"], str(workspace_root.resolve()))
+            self.assertEqual(payload["resolution"]["runtime_repo"], "default-candidate")
+            self.assertEqual(payload["resolution"]["workspace_root"], "default-candidate")
+
 
 if __name__ == "__main__":
     unittest.main()

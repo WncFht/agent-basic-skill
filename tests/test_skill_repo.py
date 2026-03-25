@@ -1,3 +1,4 @@
+import json
 import shutil
 import tempfile
 import unittest
@@ -73,12 +74,26 @@ EXPECTED_SKILLS = {
         "scripts/resolve_pulsedeck_repo.py",
         "references/templates.md",
     ],
+    "video-note-render-pdf": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "assets/case-manifest.template.json",
+        "assets/notes-template.tex",
+        "external-repos.json",
+        "scripts/resolve_video_note_paths.py",
+        "references/adapter-contract.md",
+        "references/case-bundle-contract.md",
+        "references/mode-routing.md",
+        "references/runbook.md",
+        "references/troubleshooting.md",
+    ],
 }
 WRAPPER_SKILLS = {
     "bilinote-video-note",
     "paperflow-pipeline-notes",
     "shuiyuan-cache-skill",
     "bilibili-up-digest",
+    "video-note-render-pdf",
 }
 DISALLOWED_WRAPPER_NAMES = {
     "tests",
@@ -128,6 +143,32 @@ class SkillRepoTests(unittest.TestCase):
                         (target_root / relative_path).exists(),
                         msg=f"missing copied {skill_name} file: {relative_path}",
                     )
+
+    def test_external_repo_manifests_include_required_fields(self) -> None:
+        required_fields = {
+            "id",
+            "repo",
+            "clone_url",
+            "default_clone_dir",
+            "default_detect_paths",
+            "env_var",
+            "override_key",
+            "markers",
+        }
+        for skill_name in WRAPPER_SKILLS:
+            manifest_path = SKILLS_ROOT / skill_name / "external-repos.json"
+            if not manifest_path.exists():
+                continue
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("version"), 1, msg=f"invalid manifest version: {skill_name}")
+            repositories = payload.get("repositories", [])
+            self.assertTrue(repositories, msg=f"empty repositories list: {skill_name}")
+            for repo_spec in repositories:
+                self.assertTrue(
+                    required_fields.issubset(repo_spec),
+                    msg=f"missing required manifest fields in {skill_name}: {repo_spec}",
+                )
+                self.assertTrue(repo_spec["markers"], msg=f"empty markers in {skill_name}")
 
 
 if __name__ == "__main__":
