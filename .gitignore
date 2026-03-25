@@ -8,3 +8,17 @@ tmp/
 openspec/
 local/source-overrides.json
 local/source-overrides.*.json
+
+# Generated report artifacts
+reports/**/pdf_preview/
+reports/**/*.aux
+reports/**/*.fdb_latexmk
+reports/**/*.fls
+reports/**/*.log
+reports/**/*.out
+reports/**/*.toc
+reports/**/*.xdv
+reports/**/*-git-status.txt
+reports/**/*-pytest.log
+reports/**/*-test-counts.csv
+reports/**/source-module-test-map.txt
