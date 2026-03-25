@@ -46,7 +46,7 @@ uv run video-note overview <url>
 先看：
 
 - `preflight.json`
-- `recommended_mode`
+- `preflight.json.recommended_mode`
 - `overview_frames/` 或 montage
 - transcript 质量
 

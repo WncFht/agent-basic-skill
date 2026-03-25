@@ -85,12 +85,12 @@ runtime repo 负责：
 
 - `metadata.json`
 - `preflight.json`
+- `preflight.json.recommended_mode`
 - `subtitle_probe.json`
 - `transcriber_probe.json`
 - `transcript.json`
 - `transcript.srt`
 - `transcript.txt`
-- `recommended_mode`
 
 推荐同时维护：
 
