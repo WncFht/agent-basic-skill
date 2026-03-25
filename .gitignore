@@ -5,8 +5,6 @@ __pycache__/
 .tmp/
 tmp/
 .codex/*
-!.codex/skills/
-!.codex/skills/**
 !.codex/INSTALL.md
 openspec/
 local/source-overrides.json
