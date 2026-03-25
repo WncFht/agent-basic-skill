@@ -1,0 +1,422 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!50!black
+}
+
+\newtcolorbox{findingbox}[1]{
+    enhanced,
+    colback=green!5!white,
+    colframe=green!45!black,
+    colbacktitle=green!45!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{evidencebox}[1]{
+    enhanced,
+    colback=blue!4!white,
+    colframe=blue!65!black,
+    colbacktitle=blue!65!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{riskbox}[1]{
+    enhanced,
+    colback=red!4!white,
+    colframe=red!70!black,
+    colbacktitle=red!70!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{methodbox}[1]{
+    enhanced,
+    colback=yellow!9!white,
+    colframe=yellow!60!black,
+    colbacktitle=yellow!60!black,
+    coltitle=black,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\lstset{
+    language=bash,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!50!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlist[itemize]{leftmargin=1.8em}
+\setlength{\parskip}{0.45em}
+
+\newcommand{\reporttitle}{video-note 迁移约束保真度审计}
+\newcommand{\reportsubtitle}{从旧 \texttt{video-note-skill} 到统一 \texttt{video-note-render-pdf} wrapper 的 pipeline 规则映射、弱化点与修复优先级}
+\newcommand{\reportauthors}{Codex}
+\newcommand{\reportdate}{2026-03-26}
+\newcommand{\researchquestion}{旧版 \texttt{youtube-render-pdf} / \texttt{bilibili-render-pdf} 中哪些 pipeline 约束与偏好在新 wrapper 中被保留、迁移、弱化或丢失，哪些位置需要优先修复？}
+\newcommand{\reportscope}{仅审阅本地文档与 skill 资产：旧仓 \path{/home/fanghaotian/.codex/skills/video-note-skill} 与新仓 \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf}；不把外部 runtime repo 的实际实现行为当作既成事实。}
+\newcommand{\reportaudience}{\texttt{agent-basic-skill} 的维护者，以及正在把旧视频讲义 skill 迁移到统一 wrapper 的使用者。}
+\newcommand{\sourcewindow}{本地文件证据窗口截止 2026-03-26。}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\Large 深度研究报告\par}
+\vspace{1.0cm}
+{\huge\bfseries \reporttitle\par}
+\vspace{0.5cm}
+{\Large \reportsubtitle\par}
+\vspace{0.9cm}
+{\large \reportauthors\par}
+\vspace{0.2cm}
+{\large \reportdate\par}
+\vfill
+\begin{tcolorbox}[width=0.94\textwidth, colback=black!2!white, colframe=black!60, sharp corners]
+\textbf{核心问题}：\researchquestion\par
+\textbf{研究范围}：\reportscope\par
+\textbf{目标读者}：\reportaudience\par
+\textbf{证据窗口}：\sourcewindow\par
+\end{tcolorbox}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{执行摘要}
+
+\begin{findingbox}{结论 1：真正的风险不是“全部丢了”，而是“分散迁移后可见性下降”}
+旧的 \texttt{youtube-render-pdf} / \texttt{bilibili-render-pdf} 把 source acquisition、内容取舍、figure handling、delivery 等规则集中写在单个 \texttt{SKILL.md} 中。新的 \texttt{video-note-render-pdf} 把这些规则拆散到 \texttt{SKILL.md}、\texttt{references/*.md}、\texttt{assets/notes-template.tex} 注释以及 \texttt{agents/openai.yaml}。因此很多偏好并非彻底消失，而是从“入口显式规则”退化成“分散的次级规则”。
+\end{findingbox}
+
+\begin{findingbox}{结论 2：最危险的弱化点集中在内容取舍、Bilibili 特有边界和入口 prompt}
+高风险退化主要包括：第一，旧版明确要求“以真实教学内容为主，不要被字幕牵着走，并排除寒暄、赞助、频道话术”，新 wrapper 中这一整组内容取舍规则几乎不再显式出现；第二，旧 Bilibili skill 中的分 P 处理、\texttt{b23.tv} 短链、禁止把弹幕当教学源、\texttt{visual-only} 终态回退等平台规则被弱化甚至消失；第三，\texttt{agents/openai.yaml} 的默认 prompt 现在更偏 runtime 编排，而不再强调“封面图、高召回选帧、最终综合章节”等高价值偏好。
+\end{findingbox}
+
+\begin{findingbox}{结论 3：最该先修的是文档与 prompt，而不是代码}
+从当前证据看，最值得优先补的是 prompt-facing 资产：\texttt{SKILL.md}、\texttt{agents/openai.yaml}、必要时新增平台约束参考文档。先把旧 skill 里真正重要的偏好重新提升为显式规则，再考虑 runtime contract 是否还要继续扩 schema。否则即使 runtime repo 正常工作，模型也可能在写作与取图策略上偏离原有风格。
+\end{findingbox}
+
+\begin{riskbox}{重要限定}
+本报告对“新体系”的审计对象，是 \texttt{agent-basic-skill} 仓中的 wrapper 与其文档边界，而不是 \path{/home/fanghaotian/Desktop/src/video-note-pipeline} 的真实运行实现。因此报告中的“缺失”指“在新 skill 文档或其直接 companion assets 中未被稳定表达”，不等于断言 runtime 实现一定不支持。
+\end{riskbox}
+
+\section{研究范围与方法}
+
+\begin{methodbox}{最小合理假设}
+用户最关心的是“旧 skill 里的 pipeline 约束 / preference 有没有在新 skill 中被保住”，因此本次审计采取文档保真度视角，而不是运行时功能视角。换句话说，我优先追问的是“模型现在还能不能从新 skill 入口读到这些规则”，而不是“某个外部 repo 也许实现了它”。
+\end{methodbox}
+
+本次审计的主要证据来源如下：
+
+\begin{itemize}
+\item 旧 skill 主文档：\path{/home/fanghaotian/.codex/skills/video-note-skill/skills/youtube-render-pdf/SKILL.md} 与 \path{/home/fanghaotian/.codex/skills/video-note-skill/skills/bilibili-render-pdf/SKILL.md}
+\item 旧 skill 的入口提示：对应的 \texttt{agents/openai.yaml}
+\item 新 wrapper 主文档：\path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/SKILL.md}
+\item 新 wrapper 的 companion docs：\texttt{references/adapter-contract.md}、\texttt{case-bundle-contract.md}、\texttt{mode-routing.md}、\texttt{runbook.md}、\texttt{troubleshooting.md}
+\item 新 wrapper 的入口提示与模板：\texttt{agents/openai.yaml}、\texttt{assets/notes-template.tex}、\texttt{assets/case-manifest.template.json}
+\item 迁移设计文档：\path{/home/fanghaotian/Desktop/src/agent-basic-skill/openspec/changes/add-unified-video-note-skill/design.md} 与 \path{/home/fanghaotian/Desktop/src/agent-basic-skill/openspec/changes/add-video-note-pipeline-runtime/design.md}
+\end{itemize}
+
+\begin{evidencebox}{判定口径}
+我把每条旧约束分成四类状态：
+\begin{itemize}
+\item \textbf{保留-显式}：在新 \texttt{SKILL.md} 或同级显著入口中仍有明确说明
+\item \textbf{保留-迁移}：规则仍存在，但下沉到了 reference / template / contract 中
+\item \textbf{弱化}：仍能找到相关痕迹，但表达更抽象、更短或更难触达
+\item \textbf{缺失 / 入口退化}：在新 skill 直接资产中找不到稳定表达，或只剩极弱暗示
+\end{itemize}
+\end{evidencebox}
+
+\section{旧 skill 到新 wrapper 的规则迁移图}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 1.2cm,
+    box/.style={draw, rounded corners, align=left, minimum width=5.5cm, inner sep=6pt},
+    arr/.style={-{Latex[length=3mm]}, thick}
+]
+\node[box, fill=blue!6] (old) {
+\textbf{旧 \texttt{video-note-skill}}\\
+\texttt{SKILL.md} 单体承载：\\
+- Source Acquisition\\
+- Teaching Content Rules\\
+- Writing Rules\\
+- Figure Handling\\
+- Delivery
+};
+\node[box, fill=green!6, right=of old] (new) {
+\textbf{新 \texttt{video-note-render-pdf}}\\
+规则被拆散到：\\
+- \texttt{SKILL.md}\\
+- \texttt{references/*.md}\\
+- \texttt{assets/notes-template.tex}\\
+- \texttt{agents/openai.yaml}
+};
+\draw[arr] (old) -- (new);
+\node[box, fill=yellow!8, below=of new, minimum width=7.1cm] (risk) {
+\textbf{迁移收益}\\
+统一入口、runtime contract、workspace 边界清晰\\[4pt]
+\textbf{迁移代价}\\
+规则可见性下降，入口 prompt 更偏流程而非风格
+};
+\draw[arr] (new) -- (risk);
+\end{tikzpicture}
+\caption{旧 skill 的 monolithic 规则面，已经迁移为新 wrapper 的分层规则面。作者自绘。}
+\end{figure}
+
+\section{约束映射矩阵}
+
+\renewcommand{\arraystretch}{1.22}
+\small
+\begin{longtable}{p{3.1cm}p{5.1cm}p{1.8cm}p{4.7cm}}
+\toprule
+\textbf{旧约束 / preference} & \textbf{新 skill 中的位置} & \textbf{状态} & \textbf{审计意见} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{旧约束 / preference} & \textbf{新 skill 中的位置} & \textbf{状态} & \textbf{审计意见} \\
+\midrule
+\endhead
+
+以真实教学内容为主，而不是仅凭字幕转写 & 新 \texttt{SKILL.md} 未再正面重述；\texttt{runbook.md} 只说“重建教学逻辑” & 弱化 & 这是旧 YouTube / Bilibili skill 的总纲之一，建议恢复为显式入口规则，否则容易退化成“事实层齐了就按 transcript 写”。 \\
+
+首页必须优先用原视频封面图 & 新 \texttt{SKILL.md} 第 135--149 行；模板注释第 101--117 行；\texttt{cover.*} 在 case contract 中存在 & 保留-显式 & 这条保留得比较好。 \\
+
+最终章节要保留讲者有价值的收尾讨论，并加入模型自己的综合提炼 & 新 \texttt{SKILL.md} 只保留“文末必须有 \texttt{\textbackslash section\{总结与延伸\}}”；模板注释提到 closing discussion + own synthesis & 弱化 & 现在从“强指令”退成了模板注释，入口力度不够。 \\
+
+写作前先看 title / chapters / duration / subtitle availability & 新体系通过 \texttt{preflight.json}、\texttt{metadata.json} 与“先做事实层”实现 & 保留-迁移 & 规则仍在，但不再以面向模型的自然语言显式出现。 \\
+
+选“当前环境下可下载的最高可用视频分辨率” & \texttt{adapter-contract.md} 的 \texttt{video\_probe.best\_downloadable\_format}；新 \texttt{SKILL.md} 未直接讲“最高分辨率” & 弱化 & 运行契约有痕迹，但入口说明不如旧版直接。 \\
+
+封面图必须用官方封面，不要拿随机视频帧代替 & 新 \texttt{SKILL.md} 明确说“首页优先使用视频官方封面图，而不是任意视频帧” & 保留-显式 & 这条保真度高。 \\
+
+手工字幕优先于自动字幕；保留时间戳，不要过早压平文本 & 新 \texttt{SKILL.md} 的 Subtitle-first 约束；\texttt{adapter-contract.md} 的 \texttt{selected\_track.kind} & 保留-显式 & 新体系对字幕 provenance 反而更强。 \\
+
+素材与中间产物尽量本地化保存 & 新 wrapper 的 workspace 边界、\texttt{case-bundle-contract.md} 的目录布局 & 保留-显式 & 从“建议”升级成了结构性约束。 \\
+
+过滤寒暄、小聊、赞助、频道口播 / 一键三连等非教学内容 & 新 wrapper 中没有对应“Teaching Content Rules”段落 & 缺失 & 这是最显著的内容取舍缺口之一。 \\
+
+保留有教学价值的结尾讨论 & 仅在模板注释中弱提示；主 \texttt{SKILL.md} 未展开 & 弱化 & 应从模板注释提升回显式主规则。 \\
+
+Bilibili 分 P 视频要先检测，再询问用户处理哪些 part & \texttt{adapter-contract.md} 仅要求提取“分段信息”；未写 part 选择策略 & 弱化 & 旧 skill 的操作者交互规则丢了。 \\
+
+Bilibili 要支持 \texttt{b23.tv} 短链 & 新文档只写“识别平台与标准化 URL” & 弱化 & 可能由 runtime 实现，但 wrapper 文档没有再把它固化成用户可见承诺。 \\
+
+不要把弹幕当教学内容来源 & 新 wrapper 未出现“danmaku / 弹幕”限制 & 缺失 & 对 Bilibili 尤其重要，建议补回。 \\
+
+Bilibili 字幕回退链：CC $\rightarrow$ Whisper $\rightarrow$ visual-only & 新 wrapper 变成“官方匿名 $\rightarrow$ 官方 cookies $\rightarrow$ ASR fallback”；没有再写 visual-only 终态 & 弱化 & 统一后的 subtitle-first 更严谨，但旧的“visual-only”极端分支被隐藏或消失，建议明确。 \\
+
+不要机械按字幕顺序写正文，要重建教学结构 & 新 \texttt{SKILL.md} 第 137--148 行；\texttt{runbook.md} 第 59--65 行 & 保留-显式 & 这条保留得足够明确。 \\
+
+按教学价值选图，不按固定配额；必要时一节多图 & 新 \texttt{SKILL.md} 第 145--148 行 & 保留-显式 & 表述更短，但主旨保住了。 \\
+
+\texttt{importantbox} / \texttt{knowledgebox} / \texttt{warningbox} 要有精确语义分工 & 新 \texttt{SKILL.md} 只说“承载高信号内容，不做装饰” & 弱化 & 旧版对三种盒子的语义描述更细，新版容易让使用者回到模糊装饰性用法。 \\
+
+每章都要有 \texttt{本章小结}；有需要时加 \texttt{拓展阅读} & 新 \texttt{SKILL.md} 只保留 \texttt{本章小结} & 弱化 & \texttt{拓展阅读} 明确消失，可视为轻度退化。 \\
+
+最终章节 \texttt{总结与延伸} 需要包含具体的 speaker closing discussion 与 own distillation & 新 \texttt{SKILL.md} 只保留节名，不保留详细内部结构；模板注释弱提示 & 弱化 & 与上文类似，结构名保留了，内容 contract 变弱了。 \\
+
+不要输出 \texttt{[cite]} 占位符 & 新 \texttt{SKILL.md} 的最低验证要求里仍明确保留 & 保留-显式 & 无明显问题。 \\
+
+选图时先高召回，再下采样；不要“一猜一个时间戳就截一张图” & 新 \texttt{SKILL.md} 有“依据字幕时间窗和 montage 结果选图；先高召回，再下采样”；\texttt{mode-routing.md} / \texttt{runbook.md} 也支持 & 保留-显式 & 主旨保住了，但旧 skill 的若干细粒度 heuristics 被压缩。 \\
+
+联系字幕时间窗、dense candidates、contact sheet、渐进式 PPT 最终完整态、动画过渡检查等微观 figure heuristics & 新体系只保留 montage、时间窗、最终完整态、TikZ 替代等较粗规则 & 弱化 & 不是全丢，但经验颗粒度明显变粗。 \\
+
+来自视频帧的图片必须在同页脚注记录具体时间区间 & 新 \texttt{SKILL.md} 与模板注释、编译检查都保留 & 保留-显式 & 这条被稳定继承。 \\
+
+截图不清时优先 TikZ / PGFPlots / 外部生成图 & 新 \texttt{SKILL.md} 明确保留 & 保留-显式 & 这条几乎原样保住。 \\
+
+交付物要明确包含 \texttt{.tex}、封面图、figure assets、PDF，以及 Bilibili ASR 时的 SRT & 新 wrapper 没有单独的 Delivery 章节，只能从 case contract 反推 & 弱化 & 产物 contract 更强，但交付清单对模型不再显式。 \\
+
+入口默认 prompt 要强调“封面图、高召回选帧、最终综合章节” & 新 \texttt{agents/openai.yaml} 默认 prompt 只强调 runtime repo、artifact、\texttt{recommended\_mode} 与编译 & 缺失 / 入口退化 & 这是实际影响最大的触发层回退。 \\
+
+frontmatter 描述要让模型一眼知道：章节、图表、公式、代码、封面、最终综合、PDF 都是目标的一部分 & 新 \texttt{SKILL.md} 的 description 只说“通过统一 wrapper 与外部 runtime repo 生成结构化中文 LaTeX/PDF note” & 缺失 / 入口退化 & 新描述更偏架构，不再偏产出目标。 \\
+
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{哪些地方只是迁移，哪些地方是真的退化}
+
+\subsection{迁移成功：新 wrapper 变强的部分}
+
+有几类规则，新体系其实比旧 skill 更强。
+
+\begin{itemize}
+\item \textbf{字幕 provenance 更强}：旧 skill 说“手工字幕优先、保留时间戳”；新 wrapper 不仅保留这点，还把 \texttt{manual / auto / anonymous / cookies} 写进了 \texttt{subtitle\_probe.json} contract。
+\item \textbf{workspace 与 case bundle 更清楚}：旧 skill 只是建议把素材保存在本地；新 wrapper 明确把产物写入独立 workspace，并定义了 \texttt{metadata.json}、\texttt{transcript.*}、\texttt{note.tex}、\texttt{note.pdf} 等目录结构。
+\item \textbf{事实层先行更明确}：旧 skill 是 prompt-driven，默认你边拿素材边写；新 wrapper 明确要求先完成 \texttt{prepare / probe / transcript / overview}，再写正文。
+\end{itemize}
+
+\subsection{真正退化：最需要补回的规则族}
+
+\begin{riskbox}{退化簇 1：Teaching Content Rules 几乎整段消失}
+旧 skill 中“跳过寒暄、小聊、赞助、频道话术，只保留真正有教学价值的 closing discussion”是一整块稳定规则。新 wrapper 已经没有对应章节，只剩“写作与配图规则”以及模板注释里对 \texttt{总结与延伸} 的弱提示。这会直接影响正文纯度。
+\end{riskbox}
+
+\begin{riskbox}{退化簇 2：Bilibili 特殊边界被统一化流程冲淡}
+旧 Bilibili skill 里最平台化的几条规则，包括分 P 询问、\texttt{b23.tv} 支持、禁止把弹幕当教学源、\texttt{visual-only} 终态回退，都是 prompt-facing 的。统一 wrapper 之后，这些规则要么只剩 adapter 的抽象表述，要么完全不见。
+\end{riskbox}
+
+\begin{riskbox}{退化簇 3：入口 prompt 不再传达风格与交付重心}
+旧 \texttt{openai.yaml} 默认 prompt 直接强调“原始封面图、高召回选帧、最终综合章节”。新 \texttt{openai.yaml} 则主要强调“先解析 runtime repo、检查 artifact、编译 PDF”。它更像运维提示，而不再像讲义质量提示。
+\end{riskbox}
+
+\subsection{最容易被误判为“没丢”，其实已经弱化的地方}
+
+有几条规则看起来在新 wrapper 里“似乎还在”，但其实已经从强约束退成了弱暗示：
+
+\begin{itemize}
+\item \textbf{总结与延伸}：节名还在，但“必须纳入讲者有价值的 closing discussion + 自己的蒸馏”不再作为主规则出现。
+\item \textbf{figure handling}：高召回、最终完整态、TikZ 替代还在，但诸如“不要过早缩小候选集”“遇到动画过渡要继续探查”“可裁剪/放大局部”等细粒度启发减少了。
+\item \textbf{交付清单}：新体系通过 case bundle 强化了产物结构，但反而没有像旧 skill 那样给模型一个简洁明确的“最后要交什么”列表。
+\end{itemize}
+
+\section{优先修复建议}
+
+\subsection{建议优先级}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{1.1cm}p{4.8cm}p{4.3cm}Y}
+\toprule
+\textbf{优先级} & \textbf{建议} & \textbf{目标文件} & \textbf{原因} \\
+\midrule
+P0 & 把旧入口 prompt 的高价值偏好补回默认提示：封面图、高召回选帧、最终综合章节、教学内容优先于字幕、B 站 CC 失败后的 fallback 心智模型 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/agents/openai.yaml} & 这是模型最先接触到的入口，修一处影响最大。 \\
+P0 & 在主 \texttt{SKILL.md} 恢复一小段 \textbf{内容取舍规则}，至少补回“跳过寒暄 / 赞助 / 平台口播；保留有教学价值的结尾讨论；不要仅按字幕抄写” & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/SKILL.md} & 旧 skill 中最容易影响正文质量的规则就是这组。 \\
+P1 & 为 Bilibili 特有边界补一个显式文档块，至少涵盖分 P 处理、\texttt{b23.tv}、danmaku exclusion、\texttt{visual-only} fallback & 可放回主 \texttt{SKILL.md}，或新增 \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/platform-notes.md} & 统一 wrapper 不等于平台差异可以消失；这些规则需要一个稳定落点。 \\
+P1 & 把“总结与延伸”的内部内容 contract 从模板注释提升到主文档或 runbook & \texttt{SKILL.md} 或 \texttt{references/runbook.md} & 目前只剩节名，没有内容强度。 \\
+P1 & 把旧 figure heuristics 中最关键的几条补回显式文档，例如“不要过早缩候选集”“动画过渡继续探查”“必要时裁剪/放大局部” & \texttt{SKILL.md} 或新增 \texttt{references/figure-handling.md} & 这些微观 heuristics 决定实际截图质量。 \\
+P1 & 让 case manifest / contract 更显式记录 part selection、cover artifact、subtitle kind/language、visual-only 原因等 & \texttt{assets/case-manifest.template.json} 与 \texttt{references/case-bundle-contract.md} & 这样旧偏好不只存在于 prompt，也能进入 runtime 产物。 \\
+P2 & 如仍重视写作风格一致性，可恢复三种 box 的语义分工与可选 \texttt{拓展阅读} 约定 & \texttt{SKILL.md} & 这类偏好影响风格统一性，但优先级低于前几项。 \\
+\bottomrule
+\end{tabularx}
+\caption{建议的最小修复路线。}
+\end{table}
+
+\subsection{我会怎么定义“修复完成”}
+
+如果要判断这轮修复是否真的把旧偏好救回来了，我会看以下四个信号：
+
+\begin{itemize}
+\item 只读 \texttt{agents/openai.yaml} 和新 \texttt{SKILL.md}，模型就能重新感知“封面、图、总结、内容过滤”这四组核心偏好。
+\item 不需要翻到模板注释，操作者也能知道“结尾要保留有价值的 closing discussion”。
+\item 不需要猜 Bilibili 特殊边界，文档会明确告诉你分 P、短链、弹幕、\texttt{visual-only} 该怎么处理。
+\item case artifact 中能看见一部分旧偏好留下的痕迹，而不只是依赖人的记忆。
+\end{itemize}
+
+\section{结论与后续问题}
+
+\subsection{已经有强证据支持的结论}
+
+\begin{itemize}
+\item 新 \texttt{video-note-render-pdf} 不是简单改名，而是把旧 skill 的单体规则面拆成了 wrapper + references + runtime contract。
+\item 与输出结构直接相关的规则，例如中文写作、封面图优先、\texttt{本章小结}、\texttt{总结与延伸}、时间区间 provenance、TikZ 替代，整体保留得还不错。
+\item 真正退化最明显的不是编译流程，而是 prompt-facing 的内容取舍与平台边界。
+\end{itemize}
+
+\subsection{比较可能成立，但还没有被完全证明的判断}
+
+\begin{itemize}
+\item 某些看似“缺失”的规则，可能已经在外部 \texttt{video-note-pipeline} runtime 实现中被吸收，但就 wrapper 可见文档而言，它们当前确实没有被稳定表达。
+\item 新体系更强调 deterministic helper 与 artifact contract，这会自然压缩一部分旧 prompt 中非常细的 figure heuristics；问题不在于不能压缩，而在于哪些细节不该压缩得太狠。
+\end{itemize}
+
+\subsection{仍然未知，值得下一轮验证的问题}
+
+\begin{itemize}
+\item 新 runtime repo 是否已经在实现层支持分 P 选择、\texttt{b23.tv}、\texttt{visual-only} 等旧平台规则？
+\item 当前真实使用中，模型最常偏离的是哪一类旧偏好：内容过滤、截图强度、封面选择，还是总结质量？
+\item 若只允许补三处文档，哪三处能最大幅度恢复旧 skill 的行为风格？
+\end{itemize}
+
+\appendix
+
+\section{来源清单}
+
+\small
+\begin{longtable}{p{1.0cm}p{1.7cm}p{4.2cm}p{6.4cm}}
+\toprule
+\textbf{ID} & \textbf{模态} & \textbf{标题 / 标签} & \textbf{路径} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{模态} & \textbf{标题 / 标签} & \textbf{路径} \\
+\midrule
+\endhead
+S1 & Code / Doc & 旧 YouTube skill 主文档 & \path{/home/fanghaotian/.codex/skills/video-note-skill/skills/youtube-render-pdf/SKILL.md} \\
+S2 & Code / Doc & 旧 Bilibili skill 主文档 & \path{/home/fanghaotian/.codex/skills/video-note-skill/skills/bilibili-render-pdf/SKILL.md} \\
+S3 & Code / Doc & 旧 skill README & \path{/home/fanghaotian/.codex/skills/video-note-skill/README.md} \\
+S4 & Code / Doc & 新 unified wrapper 主文档 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/SKILL.md} \\
+S5 & Code / Data & 新 wrapper 入口 prompt & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/agents/openai.yaml} \\
+S6 & Code / Doc & 新 adapter contract & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/adapter-contract.md} \\
+S7 & Code / Doc & 新 case bundle contract & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/case-bundle-contract.md} \\
+S8 & Code / Doc & 新 mode routing 文档 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/mode-routing.md} \\
+S9 & Code / Doc & 新 runbook & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/runbook.md} \\
+S10 & Code / Doc & 新 troubleshooting 文档 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/references/troubleshooting.md} \\
+S11 & Code / Data & 新模板与模板注释 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/assets/notes-template.tex} \\
+S12 & Code / Data & 新 case manifest 模板 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/skills/video-note-render-pdf/assets/case-manifest.template.json} \\
+S13 & Code / Doc & 统一 skill 设计文档 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/openspec/changes/add-unified-video-note-skill/design.md} \\
+S14 & Code / Doc & runtime repo 设计文档 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/openspec/changes/add-video-note-pipeline-runtime/design.md} \\
+S15 & Code / Data & 旧 YouTube 入口 prompt & \path{/home/fanghaotian/.codex/skills/video-note-skill/skills/youtube-render-pdf/agents/openai.yaml} \\
+S16 & Code / Data & 旧 Bilibili 入口 prompt & \path{/home/fanghaotian/.codex/skills/video-note-skill/skills/bilibili-render-pdf/agents/openai.yaml} \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{本次审计实际使用的关键定位命令}
+
+\begin{lstlisting}[caption={用于定位和比对旧新 skill 约束的代表性命令}]
+nl -ba /home/fanghaotian/.codex/skills/video-note-skill/skills/youtube-render-pdf/SKILL.md
+nl -ba /home/fanghaotian/.codex/skills/video-note-skill/skills/bilibili-render-pdf/SKILL.md
+nl -ba skills/video-note-render-pdf/SKILL.md
+nl -ba skills/video-note-render-pdf/agents/openai.yaml
+for f in skills/video-note-render-pdf/references/*.md; do nl -ba "$f"; done
+rg -n "danmaku|分P|b23|拓展阅读|channel logistics|closing discussion|PGFPlots|manual|auto" \
+  skills/video-note-render-pdf \
+  /home/fanghaotian/.codex/skills/video-note-skill/skills/youtube-render-pdf/SKILL.md \
+  /home/fanghaotian/.codex/skills/video-note-skill/skills/bilibili-render-pdf/SKILL.md
+\end{lstlisting}
+
+\end{document}

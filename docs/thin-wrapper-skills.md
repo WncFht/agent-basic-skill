@@ -44,6 +44,22 @@ wrapper 只安装轻量文件到 `~/.codex/skills/<skill-name>`。
 - 用户自己的 workspace
 - Obsidian vault、research notes、下载目录等业务数据
 
+## 关键 prompt-facing 规则
+
+thin wrapper 可以把重型执行逻辑下沉到外部 runtime repo，但不能因此丢掉那些直接影响模型输出质量、素材取舍或平台判断的关键规则。
+
+这类规则应稳定存在于 wrapper 自身可见资产中，例如：
+
+- `agents/openai.yaml` 中的默认 prompt 摘要
+- `SKILL.md` 中的主规则
+- `references/` 中的平台 caveat、交付 expectations 或高价值 heuristics
+
+不应把这类规则只留在以下位置：
+
+- 外部 runtime repo 的实现细节
+- 已废弃或待迁移的历史 skill
+- 维护者的人工记忆或临场口头说明
+
 ## 当前仓库内的 wrapper
 
 - `bilinote-video-note` -> `WncFht/BiliNote`

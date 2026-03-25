@@ -1,0 +1,44 @@
+{
+  "cid": 36823830216,
+  "subtitle": {
+    "allow_submit": false,
+    "lan": "",
+    "lan_doc": "",
+    "subtitles": [
+      {
+        "id": 1977999187761120768,
+        "lan": "ai-zh",
+        "lan_doc": "中文",
+        "is_lock": false,
+        "subtitle_url": "//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/116257315619326368238302164e82b6db311ec88cf132054affc0f0f8?auth_key=1774462415-a95331df287848efb2fdb8b0ba53711b-0-04870965f4b5c3caa6a42996216ce880",
+        "subtitle_url_v2": "//subtitle.bilibili.com/S%13%1BP.%1D%28%29X%2CR%5Ej%1F%25w%0E%02H%5EHO4%14%7B4%08K@%3C%7B%00M%0B%0A%1AM%08%056N6$%0C0&%02%1E%01%09%0E%1A2V~%15CZ%13DZZE%5E%0Ew%1D%5BZu%19XPZTZR%5B%5D_%09&~J%3Bd%0A%19%1DHM%105AwG%13Y%15AY%5ED%09Y%28MY%0AvIX?auth_key=1774462415-a95331df287848efb2fdb8b0ba53711b-0-04870965f4b5c3caa6a42996216ce880",
+        "type": 1,
+        "id_str": "1977999187761120768",
+        "ai_type": 0,
+        "ai_status": 2
+      }
+    ],
+    "subtitle_position": null,
+    "font_size_type": 0
+  },
+  "json_keys": [
+    "Stroke",
+    "background_alpha",
+    "background_color",
+    "body",
+    "font_color",
+    "font_size",
+    "lang",
+    "type",
+    "version"
+  ],
+  "body_len": 387,
+  "first_body": {
+    "from": 12.18,
+    "to": 18.18,
+    "sid": 1,
+    "location": 2,
+    "content": "♪ 火等的模样好不具想 ♪",
+    "music": 0.9999999645390084
+  }
+}

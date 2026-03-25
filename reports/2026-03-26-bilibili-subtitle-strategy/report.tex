@@ -1,0 +1,473 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!50!black
+}
+
+\newtcolorbox{findingbox}[1]{
+    enhanced,
+    colback=green!5!white,
+    colframe=green!45!black,
+    colbacktitle=green!45!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{evidencebox}[1]{
+    enhanced,
+    colback=blue!4!white,
+    colframe=blue!65!black,
+    colbacktitle=blue!65!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{riskbox}[1]{
+    enhanced,
+    colback=red!4!white,
+    colframe=red!70!black,
+    colbacktitle=red!70!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{methodbox}[1]{
+    enhanced,
+    colback=yellow!9!white,
+    colframe=yellow!60!black,
+    colbacktitle=yellow!60!black,
+    coltitle=black,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!50!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlist[itemize]{leftmargin=1.8em}
+
+\newcommand{\reporttitle}{video-note 字幕获取方案调研}
+\newcommand{\reportsubtitle}{围绕 yt-dlp、YouTube 专用库与 B 站专用方案的维护者决策建议}
+\newcommand{\reportauthors}{Codex}
+\newcommand{\reportdate}{2026-03-26}
+\newcommand{\researchquestion}{现有 pipeline 是否应该继续以 yt-dlp 作为字幕获取核心，还是应替换为更专用的库或 B 站专用实现？}
+\newcommand{\reportscope}{关注 YouTube 与 Bilibili 两个平台；目标是为 \texttt{video-note-pipeline} 的下一轮 change 提供可执行建议，而不是做泛化爬虫综述。}
+\newcommand{\reportaudience}{\texttt{video-note-pipeline} 与 \texttt{video-note-render-pdf} 的维护者}
+\newcommand{\sourcewindow}{外部资料访问时间为 2026-03-26；本地实现基线为 \texttt{video-note-pipeline} commit \texttt{75ab50e574c6bf63e3ad1baf0486f3ed3b057461}}
+\newcommand{\reportcoverpath}{}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\Large 深度研究报告\par}
+\vspace{1.0cm}
+{\huge\bfseries \reporttitle\par}
+\vspace{0.5cm}
+{\Large \reportsubtitle\par}
+\vspace{0.9cm}
+{\large \reportauthors\par}
+\vspace{0.2cm}
+{\large \reportdate\par}
+\vspace{1.0cm}
+
+\ifdefempty{\reportcoverpath}{
+{\small 本报告不使用封面图，重点保留方法、证据与可执行结论。\par}
+}{
+\includegraphics[width=0.84\textwidth,height=0.42\textheight,keepaspectratio]{\reportcoverpath}\par
+}
+
+\vfill
+\begin{tcolorbox}[width=0.94\textwidth, colback=black!2!white, colframe=black!60, sharp corners]
+\textbf{核心问题}：\researchquestion\par
+\textbf{研究范围}：\reportscope\par
+\textbf{目标读者}：\reportaudience\par
+\textbf{证据窗口}：\sourcewindow\par
+\end{tcolorbox}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{执行摘要}
+
+\begin{findingbox}{结论先行}
+不建议现在把 \texttt{yt-dlp} 整体替换掉。对于 B 站，当前漏字幕的主因是本地 adapter 的语言请求与归一化策略过窄，而不是 \texttt{yt-dlp} 本身拿不到字幕。对于 YouTube，\texttt{youtube-transcript-api} 依然有明显优势，应保留在第一优先级。
+\end{findingbox}
+
+\begin{itemize}
+\item 强支持结论：\texttt{yt-dlp} 官方支持列出字幕、按正则或 \texttt{all} 请求语言、自动字幕、浏览器 cookies 导入（S1）。这意味着它具备作为跨平台字幕后备层的基础能力。
+\item 强支持结论：\texttt{youtube-transcript-api} 官方 README 明确支持列出 transcript、区分人工/自动字幕、翻译字幕，且不需要 headless browser（S2）。它适合作为 YouTube 的 transcript-first 路径。
+\item 强支持结论：本地复现实验显示，当前 pipeline 在 cookies 有效的情况下，对样例 \texttt{BV1DzALzQEHU} 仍返回 \texttt{selected\_track.source = none}（L2）；但直接调用 \texttt{yt-dlp} 并使用 \texttt{--sub-langs all,-live\_chat,-danmaku} 可以成功拿到 \texttt{ai-zh.srt}（L3）。这直接指向“请求/筛选策略错误”而不是“cookies 或 yt-dlp 不可用”。
+\item 审慎结论：B 站专用方案如 \texttt{bilibili-api-python}（S4）和 \texttt{BBDown}（S3）都值得关注，但它们更适合作为第二阶段增强或专用 fallback，而不是现在就替换主干。
+\end{itemize}
+
+\begin{riskbox}{不该做的事}
+现在最不划算的选择，是为了修一个 \texttt{ai-zh} 漏检问题，立刻把整条 B 站字幕链替换成新的第三方库或外部 CLI。这样会引入更高的维护成本、部署复杂度和平台差异，却不能保证比修正现有策略更稳。
+\end{riskbox}
+
+\section{研究范围与方法}
+
+\begin{methodbox}{研究问题与判据}
+本报告不是在问“哪个工具功能最多”，而是在问“对于现有工程，哪个方案的维护收益最高”。判据有四个：
+\begin{itemize}
+\item 能否稳定拿到平台原生字幕
+\item 与现有 Python/CLI 架构的集成代价
+\item cookies、登录态与风控处理的复杂度
+\item 当平台变化时的维护成本
+\end{itemize}
+\end{methodbox}
+
+本次研究结合了三类证据：
+\begin{itemize}
+\item 本地实现证据：\texttt{video-note-pipeline} 当前 adapter、测试与真实 probe artifact
+\item 官方或项目一手资料：各库或工具自己的 README / 文档
+\item 针对 B 站 AI 字幕的公开社区证据：确认字幕标签与接口形态的存在
+\end{itemize}
+
+\begin{evidencebox}{本地复现实验}
+研究使用的关键本地路径如下：
+\begin{itemize}
+\item 当前实现：\path{/home/fanghaotian/Desktop/src/video-note-pipeline/src/video_note_pipeline/adapters/base.py}
+\item 失败 probe artifact：\path{/home/fanghaotian/Desktop/src/agent-basic-skill/reports/2026-03-26-bilibili-subtitle-strategy/artifacts/current-subtitle-probe-BV1DzALzQEHU.json}
+\item 直接调用 \texttt{yt-dlp} 成功拿到的字幕：\path{/home/fanghaotian/Desktop/src/agent-basic-skill/reports/2026-03-26-bilibili-subtitle-strategy/artifacts/direct-yt-dlp-BV1DzALzQEHU.ai-zh.srt}
+\end{itemize}
+\end{evidencebox}
+
+\section{当前实现的真正问题在哪里}
+
+当前 B 站字幕下载路径的核心逻辑是：
+\begin{itemize}
+\item 通过 \texttt{yt-dlp} 下载 sidecar 字幕
+\item 只请求固定语言集合 \texttt{zh-Hans, zh, zh-CN, zh-TW, en, en-US, ja}
+\item 从 \texttt{requested\_subtitles} 里按固定优先级选轨
+\end{itemize}
+
+这段策略在“平台语言码命名稳定”的情况下能工作，但一旦平台返回 \texttt{ai-zh}、\texttt{zh-Hant}、\texttt{yue}、\texttt{auto-zh} 之类未列入白名单的标签，就会出现“明明有字幕，但 probe 结果是 none”的假阴性。
+
+\begin{lstlisting}[language=Python,caption={当前实现中的固定语言优先级，摘自本地 adapter}]
+DEFAULT_LANGUAGE_PRIORITY = [
+    "zh-Hans", "zh", "zh-CN", "zh-TW", "en", "en-US", "ja"
+]
+\end{lstlisting}
+
+下面两份本地证据把问题钉死了。
+
+\subsection{证据一：当前 pipeline 在 cookies 有效时仍判定无字幕}
+
+\begin{lstlisting}[language={},caption={本地失败 probe 结果的关键字段，来源 L2}]
+"cookies": {
+  "ok": false,
+  "tracks": [],
+  "error": "No subtitle track could be parsed"
+},
+"selected_track": {
+  "source": "none",
+  "language": "",
+  "kind": "",
+  "reason": "No subtitle track could be parsed | No subtitle track could be parsed"
+},
+"cookie_status": {
+  "status": "valid",
+  "valid": true,
+  "critical_cookie_names_present": ["DedeUserID", "SESSDATA", "bili_jct"]
+}
+\end{lstlisting}
+
+这说明 cookies 不是根因。登录态已经有效，但轨道仍未命中。
+
+\subsection{证据二：直接调用 yt-dlp 能拿到 \texttt{ai-zh} 字幕}
+
+\begin{lstlisting}[language=bash,caption={本地直连命令，成功拿到 B 站样例视频的字幕}]
+uv run python -m yt_dlp \
+  --cookies /home/fanghaotian/.config/video-note-pipeline/cookies/bilibili.txt \
+  --skip-download \
+  --write-subs \
+  --write-auto-subs \
+  --sub-langs 'all,-live_chat,-danmaku' \
+  --sub-format 'json3/srt/vtt/best' \
+  -o '/tmp/bili-sub-check-BV1DzALzQEHU/%(id)s.%(ext)s' \
+  'https://www.bilibili.com/video/BV1DzALzQEHU/?spm_id_from=333.1007.tianma.6-1-19.click&vd_source=8eeed36c8368d0ab0bb576c12209518e'
+\end{lstlisting}
+
+\begin{lstlisting}[language={},caption={成功下载到的字幕文件片段，来源 L3}]
+1
+00:00:12,180 --> 00:00:18,180
+♪ 火等的模样好不具想 ♪
+
+2
+00:00:20,520 --> 00:00:26,800
+♪ 你用皮肤感受你的流向 ♪
+\end{lstlisting}
+
+\begin{findingbox}{直接推论}
+对当前样例而言，\texttt{yt-dlp} 不是瓶颈。真正该修的是 B 站 adapter 的“请求哪些语言”和“如何把 \texttt{ai-zh} 归类为中文自动字幕候选”。
+\end{findingbox}
+
+\section{外部方案比较}
+
+\subsection{\texttt{yt-dlp}：跨平台后备层，而不是 transcript-first 层}
+
+根据 \texttt{yt-dlp} 官方 README：
+\begin{itemize}
+\item 它支持 \texttt{--write-subs}、\texttt{--write-auto-subs}、\texttt{--list-subs}（S1）。
+\item 它支持 \texttt{--sub-langs}，并且语言参数可以是正则或 \texttt{all}；官方示例直接给出了 \texttt{all,-live\_chat}（S1）。
+\item 它支持 \texttt{--cookies-from-browser} 并列出了 Linux Chromium keyring 的选项（S1）。
+\end{itemize}
+
+这三个点对当前工程非常关键。它们意味着：
+\begin{itemize}
+\item 我们不必自己实现浏览器 cookies 解密
+\item 我们不必自己维护所有平台的下载/字幕 sidecar 细节
+\item 我们有条件先拿全量字幕标签，再在本地做平台特定的归一化与排序
+\end{itemize}
+
+\begin{riskbox}{\texttt{yt-dlp} 的边界}
+\texttt{yt-dlp} 更像“通用提取器与下载器”，不是“语义化 transcript SDK”。不同 extractor 暴露的语言码和 sidecar 命名规则并不统一，所以如果上层策略偷懒，把语言表写死，误判就会落到我们自己头上。
+\end{riskbox}
+
+\subsection{\texttt{youtube-transcript-api}：YouTube 上更像正确的第一层}
+
+根据 \texttt{youtube-transcript-api} 官方 README：
+\begin{itemize}
+\item 它直接面向 transcript/subtitle 语义，支持人工字幕、自动字幕、翻译字幕（S2）。
+\item 它提供 \texttt{list(video\_id)}、\texttt{find\_transcript()}、\texttt{find\_manually\_created\_transcript()}、\texttt{find\_generated\_transcript()} 这类高层接口（S2）。
+\item 它不需要 API key，也不需要 headless browser（S2）。
+\end{itemize}
+
+这就是它比 \texttt{yt-dlp} 更适合 YouTube 第一层的原因：不是功能覆盖更广，而是返回的数据结构更接近我们真正需要的 transcript 模型。
+
+但 README 也明确提醒了两个限制：
+\begin{itemize}
+\item 它使用的是 undocumented YouTube web-client API，因此没有长期稳定性保证（S2）。
+\item 当前 cookie-based authentication 因 YouTube 的近期变更而不可用（S2）。
+\end{itemize}
+
+\begin{findingbox}{对 YouTube 的维护判断}
+YouTube 平台不需要“只保留一个工具”。最佳工程策略仍然是：\texttt{youtube-transcript-api} 优先，\texttt{yt-dlp} 作 cookie/sidecar 补位，最后才进入 ASR。
+\end{findingbox}
+
+\subsection{\texttt{bilibili-api-python}：Python 原生，但属于更重的 B 站专用层}
+
+从 \texttt{bilibili-api-python} 项目 README 可见：
+\begin{itemize}
+\item 它明确把“下载字幕文件”列在能力范围内（S4）。
+\item 它也覆盖 cookies 刷新、代理、反风控规避、异步请求库选择等工程问题（S4）。
+\item README 自己也提醒，这类接口变更后可能会马上失效，需要持续更新（S4）。
+\end{itemize}
+
+这说明它适合什么，不适合什么：
+\begin{itemize}
+\item 适合：当我们确定 B 站需要更细粒度的 \texttt{cid}、字幕列表、登录态与反风控控制时，作为 Python 内部的 B 站专用增强层
+\item 不适合：为了修一个现成可复现的语言筛选问题，直接替换掉现有 \texttt{yt-dlp} 主干
+\end{itemize}
+
+\begin{riskbox}{维护代价}
+这类库的价值在“B 站语义更强”，不是“天然更稳”。它本质上仍然依赖非官方接口。只要 B 站网页或客户端接口变化，维护压力就会回到我们自己身上。
+\end{riskbox}
+
+\subsection{\texttt{BBDown}：B 站专用 CLI，适合作为外部 fallback，而不是马上内嵌}
+
+根据 \texttt{BBDown} README：
+\begin{itemize}
+\item 它支持 \texttt{--sub-only}，可只下载字幕（S3）。
+\item 它支持 AI 字幕，但默认开启 \texttt{--skip-ai}，需要显式调整策略（S3）。
+\item 它支持扫码登录、手工传 cookie、甚至 TV / App 鉴权路径（S3）。
+\end{itemize}
+
+这很有吸引力，因为它明显更懂 B 站。但它的问题也同样明显：
+\begin{itemize}
+\item 它是独立 CLI，不是我们现有 Python 依赖的一部分
+\item 引入它会增加二进制管理、跨平台安装、日志解析与故障诊断复杂度
+\item 它的“更懂 B 站”在短期内并不能证明比修正 \texttt{yt-dlp} 调用策略更划算
+\end{itemize}
+
+\subsection{比较表}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{2.8cm}p{2.6cm}p{3.8cm}Y}
+\toprule
+方案 & 主要定位 & 明显优势 & 主要代价 / 风险 \\
+\midrule
+\texttt{yt-dlp} & 跨平台提取与下载 & 平台覆盖广；支持 cookies-from-browser；支持列字幕和请求全量语言；已在现有工程内使用 & 语言码与 sidecar 细节需上层自己归一化；不是 transcript-first 数据模型 \\
+\texttt{youtube-transcript-api} & YouTube transcript SDK & transcript 语义直接；可区分人工/自动字幕；不需要 headless browser & 仅适用于 YouTube；使用 undocumented API； cookie 认证当前不可用 \\
+\texttt{bilibili-api-python} & Python 原生 B 站专用 API 层 & 可直接处理 B 站语义；覆盖字幕文件、Credential、代理、异步请求 & 非官方接口；维护压力更高；引入复杂度高于修正现有 adapter \\
+\texttt{BBDown} & B 站专用外部 CLI & 对 B 站下载、登录、字幕场景支持强；可只下载字幕；覆盖 AI 字幕路径 & 外部二进制依赖；集成和调试成本更高；并不适合作为第一步变更 \\
+\bottomrule
+\end{tabularx}
+\caption{围绕现有 pipeline 的维护者视角比较}
+\end{table}
+
+\section{建议的目标架构}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=8mm and 8mm,
+    box/.style={draw, rounded corners, align=center, minimum width=3.1cm, minimum height=9mm},
+    arrow/.style={-{Latex[length=2.4mm]}, thick}
+]
+\node[box, fill=blue!5] (start) {平台识别};
+\node[box, fill=green!5, below=of start] (yt) {YouTube:\\\texttt{youtube-transcript-api}};
+\node[box, fill=yellow!8, right=26mm of yt] (bili) {Bilibili:\\\texttt{yt-dlp} 请求全量字幕\\+ 语言归一化};
+\node[box, fill=orange!8, below=of yt] (cookie) {cookie / sidecar 后备层};
+\node[box, fill=red!5, below=of cookie] (asr) {ASR fallback};
+\node[box, fill=gray!8, below=of asr] (artifact) {落地 artifact:\\raw tracks + selected reason};
+\draw[arrow] (start) -- (yt);
+\draw[arrow] (start) -- (bili);
+\draw[arrow] (yt) -- (cookie);
+\draw[arrow] (bili) -- (cookie);
+\draw[arrow] (cookie) -- (asr);
+\draw[arrow] (asr) -- (artifact);
+\end{tikzpicture}
+\caption{建议的字幕获取分层}
+\end{figure}
+
+\subsection{YouTube：维持现状的主方向，不建议大改}
+
+建议顺序：
+\begin{itemize}
+\item 第一层：\texttt{youtube-transcript-api.list()} 获取公开 transcript 列表，并优先人工字幕
+\item 第二层：\texttt{yt-dlp} cookie/sidecar 路径处理年龄限制、需要登录或 sidecar-only 的情况
+\item 第三层：ASR fallback
+\end{itemize}
+
+这个路径的优点是各层职责清晰，且已被现有工程验证。
+
+\subsection{Bilibili：先修策略，再决定是否引入专用层}
+
+建议的近期改动是：
+\begin{itemize}
+\item 不再把 \texttt{subtitleslangs} 限制在固定少量语言码；至少要支持 \texttt{all,-live\_chat,-danmaku}
+\item 为 B 站增加语言归一化，把 \texttt{ai-zh}、\texttt{zh-Hans}、\texttt{zh-CN}、\texttt{zh-Hant}、\texttt{zh-TW}、\texttt{yue}、\texttt{auto-zh} 收敛到统一的中文候选族
+\item 先做“归一化之后的偏好排序”，再决定人工/自动字幕优先级
+\item 在 \texttt{subtitle\_probe.json} 中保留原始轨道清单和未命中原因，而不是只返回 \texttt{none}
+\end{itemize}
+
+\begin{findingbox}{最有性价比的 change}
+对 B 站来说，最值得立刻实现的不是“换库”，而是“请求全量字幕 + 平台特定语言归一化 + artifact 可观测性”。这三个改动能直接修掉当前样例问题，并且对后续真实 case 调试最有帮助。
+\end{findingbox}
+
+\subsection{什么时候再考虑 B 站专用库}
+
+只有在下面任一情况持续出现时，才建议上升到第二阶段：
+\begin{itemize}
+\item 即使请求全量字幕并做语言归一化，\texttt{yt-dlp} 仍显著漏掉 B 站官方字幕
+\item 需要直接使用 \texttt{cid}、字幕列表、翻译轨、分 P 语义等更细粒度能力
+\item 需要更强的登录态、反风控或 TV / App 鉴权控制
+\end{itemize}
+
+这时可以考虑两条路：
+\begin{itemize}
+\item 轻量路线：自己实现一个极小的 B 站 direct API adapter，只做 \texttt{cid} 与字幕列表查询
+\item 重量路线：接入 \texttt{bilibili-api-python} 或 \texttt{BBDown} 作为 B 站专用 fallback
+\end{itemize}
+
+\section{为后续 propose 准备的变更建议}
+
+如果下一步要开 OpenSpec change，我建议目标写成“修复 B 站字幕探测的语言覆盖与可观测性”，而不是“替换字幕引擎”。可以拆成四项：
+
+\begin{enumerate}
+\item 将 B 站字幕请求从固定语言集合改为全量请求或正则请求，并显式排除 \texttt{live\_chat} / \texttt{danmaku}。
+\item 增加 B 站语言归一化与优先级选择，覆盖 \texttt{ai-zh} 这类自动字幕语言码。
+\item 扩展 \texttt{subtitle\_probe.json}，保留 raw tracks、归一化结果与未命中原因。
+\item 增加真实回归测试，至少覆盖“cookies 有效且字幕语言码为 \texttt{ai-zh}”这一类 case。
+\end{enumerate}
+
+\begin{riskbox}{暂缓事项}
+不建议把“接入 \texttt{BBDown}”或“全面迁移到 \texttt{bilibili-api-python}”放进第一轮 change。它们可以在 P1/P2 里继续调研，但不该和当前这个已知、局部、可复现的问题绑在一起。
+\end{riskbox}
+
+\section{结论与后续问题}
+
+\subsection{已经有强证据支持的判断}
+
+\begin{itemize}
+\item 当前 B 站字幕 miss 的直接原因是 adapter 自己的语言覆盖与选择逻辑过窄。
+\item \texttt{yt-dlp} 具备获取 B 站该样例官方字幕的能力，当前不需要因为这个问题整体替换它。
+\item \texttt{youtube-transcript-api} 仍然适合作为 YouTube 第一层 transcript 接口。
+\end{itemize}
+
+\subsection{很可能成立，但还值得继续验证的判断}
+
+\begin{itemize}
+\item B 站还会继续出现更多非 \texttt{zh-Hans} 命名的字幕标签，因此语言归一化应该做成平台策略，而不是一次性补 \texttt{ai-zh}。
+\item 即使未来引入 B 站专用 API 层，\texttt{yt-dlp} 仍然值得保留为跨平台 fallback。
+\end{itemize}
+
+\subsection{还不知道，但下一轮 change 应该顺手补上的观测点}
+
+\begin{itemize}
+\item 请求全量字幕后，不同 B 站视频会返回哪些语言标签分布
+\item 哪些失败是真正“平台没有字幕”，哪些失败只是“轨道没被挑中”
+\item 在修复语言归一化后，是否还有足够多的 case 值得引入 B 站 direct API adapter
+\end{itemize}
+
+\appendix
+\section{来源清单}
+
+\small
+\begin{longtable}{p{1.4cm}p{1.5cm}p{3.3cm}p{6.9cm}}
+\toprule
+Source ID & 模态 & 标题 / 标签 & 链接或路径 \\
+\midrule
+\endfirsthead
+\toprule
+Source ID & 模态 & 标题 / 标签 & 链接或路径 \\
+\midrule
+\endhead
+S1 & Web & \texttt{yt-dlp} 官方 README & \url{https://github.com/yt-dlp/yt-dlp} \\
+S2 & Web & \texttt{youtube-transcript-api} 官方 README & \url{https://github.com/jdepoix/youtube-transcript-api} \\
+S3 & Web & \texttt{BBDown} 官方 README & \url{https://github.com/nilaoda/BBDown} \\
+S4 & Web & \texttt{bilibili-api-python} 官方 README & \url{https://github.com/Nemo2011/bilibili-api} \\
+S5 & Web & B 站 AI 字幕接口公开 issue 讨论 & \url{https://github.com/SocialSisterYi/bilibili-API-collect/issues/709} \\
+L1 & Code & 当前 B 站 adapter 实现 & \path{/home/fanghaotian/Desktop/src/video-note-pipeline/src/video_note_pipeline/adapters/base.py} \\
+L2 & JSON & 当前样例 B 站 probe artifact & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/reports/2026-03-26-bilibili-subtitle-strategy/artifacts/current-subtitle-probe-BV1DzALzQEHU.json} \\
+L3 & SRT & 直接调用 \texttt{yt-dlp} 获得的 \texttt{ai-zh} 字幕 & \path{/home/fanghaotian/Desktop/src/agent-basic-skill/reports/2026-03-26-bilibili-subtitle-strategy/artifacts/direct-yt-dlp-BV1DzALzQEHU.ai-zh.srt} \\
+\bottomrule
+\end{longtable}
+
+\end{document}

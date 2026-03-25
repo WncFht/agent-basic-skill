@@ -47,16 +47,28 @@
 推荐至少记录：
 
 - `source_url`
+- `normalized_url`
 - `platform`
 - `video_id`
 - `runtime.repo_root`
 - `runtime.workspace_root`
+- `runtime.part_selection`
 - `runtime.subtitle_source`
+- `runtime.subtitle_language`
+- `runtime.subtitle_kind`
 - `runtime.transcript_source`
 - `runtime.recommended_mode`
+- `runtime.visual_only_reason`
 - `artifacts.*`
 
 可以直接从 `assets/case-manifest.template.json` 起草。
+
+补充约定：
+
+- 若视频是分 P / multipart case，`runtime.part_selection` 应显式记录本次处理范围
+- 若使用平台字幕，建议同时记录 `subtitle_language` 与 `subtitle_kind`
+- 若进入 `visual-only`，`runtime.visual_only_reason` 不得为空
+- `artifacts.cover_image`、`artifacts.figures_dir` 与 `artifacts.pdf_preview_dir` 应指向本地 case 内的稳定路径
 
 ## 编译与 QA
 

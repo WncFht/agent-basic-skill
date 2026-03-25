@@ -1,0 +1,44 @@
+{
+  "platform": "bilibili",
+  "video_id": "BV1DzALzQEHU",
+  "anonymous": {
+    "ok": false,
+    "tracks": [],
+    "error": "No subtitle track could be parsed"
+  },
+  "cookies": {
+    "ok": false,
+    "tracks": [],
+    "error": "No subtitle track could be parsed"
+  },
+  "selected_track": {
+    "source": "none",
+    "language": "",
+    "kind": "",
+    "cached_payload_path": "",
+    "reason": "No subtitle track could be parsed | No subtitle track could be parsed"
+  },
+  "cookie_status": {
+    "path": "/home/fanghaotian/.config/video-note-pipeline/cookies/bilibili.txt",
+    "status": "valid",
+    "valid": true,
+    "reason": "",
+    "recommendation": "",
+    "suggested_command": "",
+    "cookie_count": 37,
+    "matching_domains": [
+      ".bilibili.com",
+      "live.bilibili.com",
+      "search.bilibili.com",
+      "www.bilibili.com"
+    ],
+    "critical_cookie_names_present": [
+      "DedeUserID",
+      "SESSDATA",
+      "bili_jct"
+    ],
+    "auth_cookie_present": true,
+    "used_for_selected_track": false,
+    "needed_for_subtitle_fallback": true
+  }
+}
