@@ -8,6 +8,7 @@
 <workspace>/<case-id>/
 ├── case_manifest.json
 ├── metadata.json
+├── metadata.raw.json
 ├── preflight.json
 ├── subtitle_probe.json
 ├── transcriber_probe.json
@@ -20,12 +21,14 @@
 ├── figures/
 ├── overview_frames/
 ├── montages/
+├── pdf_preview/
 └── work/
 ```
 
 ## 必需产物
 
 - `metadata.json`: 平台原始 metadata 的规范化版本
+- `metadata.raw.json`: 原始平台抓取结果，便于调试 adapter 差异
 - `preflight.json`: 平台、格式、封面、章节、推荐模式等事实层摘要
 - `subtitle_probe.json`: 平台字幕与 cookies 探测结果
 - `transcriber_probe.json`: ASR 探测结果；如果平台字幕已成功，仍可记录为 `required=false`
@@ -36,7 +39,8 @@
 - `case_manifest.json`: 总览本 case 的核心路径、来源和状态
 - `overview_frames/`: 粗采样总览帧
 - `montages/`: 高召回阶段使用的 contact sheet
-- `work/`: 中间候选帧、probe log、转写 log
+- `pdf_preview/`: PDF 页面预览图，便于快速肉眼检查
+- `work/`: 中间候选帧、probe log、转写 log、overview/build 摘要
 
 ## `case_manifest.json`
 

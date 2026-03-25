@@ -22,6 +22,19 @@ description: Use when the user wants to turn a YouTube or Bilibili lecture, tuto
 
 如果 runtime repo 的远端还没稳定发布，优先通过环境变量或 local source override 指向本地 clone。
 
+首次进入 runtime repo 后，优先执行：
+
+```bash
+uv sync --extra dev
+pre-commit install
+```
+
+如果本机需要本地 ASR backend，再按需增加：
+
+```bash
+uv sync --extra dev --extra asr-cpu
+```
+
 ## 先解析 runtime repo 与 workspace
 
 优先级：
@@ -111,12 +124,13 @@ runtime repo 负责：
 ## 推荐工作流
 
 1. 解析 runtime repo 与 workspace 路径。
-2. 在 runtime repo 中先完成 metadata、subtitle probe、format probe、preflight。
-3. 检查 `recommended_mode`、overview montage 和 transcript 质量，再决定截图强度。
-4. 从 `assets/notes-template.tex` 起稿，必要时用 `assets/case-manifest.template.json` 固定 case 元数据。
-5. 让模型在 `talking-head / visual-light / static-outline / board-heavy` 之间确认或覆写模式。
-6. 依据字幕时间窗和 montage 结果选图；先高召回，再下采样。
-7. 写出完整 `note.tex`，再用 `latexmk -xelatex` 编译并做 PDF 预览检查。
+2. 如果需要 cookies，先在 runtime repo 中运行 `uv run video-note cookies-export youtube --browser edge` 或 `uv run video-note cookies-export bilibili --browser edge`。
+3. 在 runtime repo 中按顺序运行 `uv run video-note prepare <url>`、`uv run video-note probe <url>`、`uv run video-note transcript <url>`、`uv run video-note overview <url>`。
+4. 检查 `recommended_mode`、overview montage 和 transcript 质量，再决定截图强度。
+5. 从 `assets/notes-template.tex` 起稿，必要时用 `assets/case-manifest.template.json` 固定 case 元数据。
+6. 让模型在 `talking-head / visual-light / static-outline / board-heavy` 之间确认或覆写模式。
+7. 依据字幕时间窗和 montage 结果选图；先高召回，再下采样。
+8. 写出完整 `note.tex`，再用 `uv run video-note build <url>` 或 `latexmk -xelatex` 编译并做 PDF 预览检查。
 
 ## 写作与配图规则
 
@@ -147,6 +161,12 @@ latexmk -xelatex -interaction=nonstopmode note.tex
 - PDF 中封面图、关键 figures、footnote provenance 与目录结构都正确
 - 没有 `[cite]` 占位符
 - figure 的时间区间与正文描述一致
+
+如果在 Windows 上运行 runtime repo，优先确认：
+
+- `ffmpeg`、`latexmk` 在 `PATH` 中
+- case workspace 不要落到只读目录
+- `transcriber_probe.json` 已确认 CUDA sample 成功；否则默认按 CPU 路径处理
 
 ## 按需读取的参考文档
 

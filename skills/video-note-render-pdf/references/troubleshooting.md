@@ -10,6 +10,12 @@
 
 如果 runtime repo 远端还未发布，先用环境变量或 local override 指向本地 clone。
 
+进入 repo 后先跑：
+
+```bash
+uv sync --extra dev
+```
+
 ## 找不到 workspace
 
 默认 workspace 是 `~/Desktop/src/video_notes`。如果该目录不存在：
@@ -18,6 +24,8 @@
 - 设置 `VIDEO_NOTE_WORKSPACE_ROOT`
 
 不要把 case 目录写回当前 skill 目录。
+
+Windows 上建议把 runtime repo 和 workspace 放在常规可写路径，如 `C:\Users\<user>\Desktop\src\...`。
 
 ## 平台字幕拿不到
 
@@ -28,6 +36,13 @@
 3. 是否记录了失败原因
 
 只有这两层都失败，才进入 ASR。
+
+若本机尚未导出 cookies，可先运行：
+
+```bash
+uv run video-note cookies-export youtube --browser edge
+uv run video-note cookies-export bilibili --browser edge
+```
 
 ## ASR fallback 不稳定
 
@@ -51,12 +66,14 @@ export all_proxy=http://127.0.0.1:7897
 
 GPU 可用性应由 runtime repo 的 probe 给出，不要靠猜测。
 
+Windows 上即使安装了 CUDA，也要以 `transcriber_probe.json` 的 sample probe 结果为准；sample 失败就按 CPU fallback 处理。
+
 ## LaTeX 编译问题
 
 优先使用：
 
 ```bash
-latexmk -xelatex -interaction=nonstopmode note.tex
+uv run video-note build <url>
 ```
 
 常见问题：

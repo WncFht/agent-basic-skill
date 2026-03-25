@@ -17,13 +17,27 @@ python scripts/resolve_video_note_paths.py --json
 
 ## 2. 先做事实层
 
-在 runtime repo 中优先完成：
+进入 runtime repo 后，优先准备环境：
 
-- metadata probe
-- subtitle probe
-- cookies probe
-- format probe
-- ASR probe
+```bash
+uv sync --extra dev
+```
+
+如果需要 cookies：
+
+```bash
+uv run video-note cookies-export youtube --browser edge
+uv run video-note cookies-export bilibili --browser edge
+```
+
+然后按顺序完成：
+
+```bash
+uv run video-note prepare <url>
+uv run video-note probe <url>
+uv run video-note transcript <url>
+uv run video-note overview <url>
+```
 
 目标不是“自动写完讲义”，而是稳定地产出事实层 artifact。
 
@@ -53,6 +67,12 @@ python scripts/resolve_video_note_paths.py --json
 ## 5. 编译与视觉检查
 
 推荐命令：
+
+```bash
+uv run video-note build <url>
+```
+
+若只想直接编译当前 `note.tex`，也可以退回：
 
 ```bash
 latexmk -xelatex -interaction=nonstopmode note.tex

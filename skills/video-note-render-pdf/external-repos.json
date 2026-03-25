@@ -16,7 +16,7 @@
         "pyproject.toml",
         "README.md"
       ],
-      "bootstrap_hint": "Run uv sync from the runtime repo root, then configure cookies, subtitles, and ASR backends there."
+      "bootstrap_hint": "Run `uv sync --extra dev` from the runtime repo root, use `uv run video-note cookies-export <platform>` if cookies are needed, then run the `video-note` CLI commands there."
     }
   ]
 }
