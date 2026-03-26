@@ -1,0 +1,194 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tikz}
+\IfFileExists{pgfplots.sty}{
+    \usepackage{pgfplots}
+    \pgfplotsset{compat=1.18}
+}{}
+
+% Hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!50!black
+}
+
+% Highlight boxes
+\newtcolorbox{findingbox}[1]{
+    enhanced,
+    colback=green!5!white,
+    colframe=green!45!black,
+    colbacktitle=green!45!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{evidencebox}[1]{
+    enhanced,
+    colback=blue!4!white,
+    colframe=blue!65!black,
+    colbacktitle=blue!65!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{riskbox}[1]{
+    enhanced,
+    colback=red!4!white,
+    colframe=red!70!black,
+    colbacktitle=red!70!black,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+\newtcolorbox{methodbox}[1]{
+    enhanced,
+    colback=yellow!9!white,
+    colframe=yellow!60!black,
+    colbacktitle=yellow!60!black,
+    coltitle=black,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners
+}
+
+% Listings
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!50!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+% Table helpers
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlist[itemize]{leftmargin=1.8em}
+
+% Metadata
+\newcommand{\reporttitle}{[在此填写研究主题]}
+\newcommand{\reportsubtitle}{[在此填写副标题或研究切口]}
+\newcommand{\reportauthors}{Codex}
+\newcommand{\reportdate}{\today}
+\newcommand{\researchquestion}{[在此填写核心研究问题]}
+\newcommand{\reportscope}{[在此填写研究范围、时间边界或限定条件]}
+\newcommand{\reportaudience}{[在此填写目标读者]}
+\newcommand{\sourcewindow}{[在此填写资料截止日期或证据窗口]}
+\newcommand{\reportcoverpath}{}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\Large 深度研究报告\par}
+\vspace{1.0cm}
+{\huge\bfseries \reporttitle\par}
+\vspace{0.5cm}
+{\Large \reportsubtitle\par}
+\vspace{0.9cm}
+{\large \reportauthors\par}
+\vspace{0.2cm}
+{\large \reportdate\par}
+\vspace{1.0cm}
+
+\ifdefempty{\reportcoverpath}{
+{\small 若有合适的封面图、关键图表、产品截图或示意图，请在生成时填入本地路径。\par}
+}{
+\includegraphics[width=0.84\textwidth,height=0.42\textheight,keepaspectratio]{\reportcoverpath}\par
+}
+
+\vfill
+\begin{tcolorbox}[width=0.94\textwidth, colback=black!2!white, colframe=black!60, sharp corners]
+\textbf{核心问题}：\researchquestion\par
+\textbf{研究范围}：\reportscope\par
+\textbf{目标读者}：\reportaudience\par
+\textbf{证据窗口}：\sourcewindow\par
+\end{tcolorbox}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+%% --- 正文内容开始 --- %%
+
+% Recommended structure:
+%
+% \section{执行摘要}
+% - Give the main conclusion first.
+% - Separate strong findings, likely findings, and open uncertainties.
+%
+% \section{研究范围与方法}
+% - Explain the question, scope, cutoff date, and evidence inventory.
+% - Use methodbox or evidencebox when reproducibility matters.
+%
+% \section{主体分析}
+% - Organize by thesis, comparison axis, or timeline rather than source order.
+% - Use figures, tables, formulas, and citations whenever they improve understanding.
+%
+% \section{反例、风险与争议点}
+% - Explicitly surface contradictory evidence or unresolved uncertainty.
+%
+% \section{结论与后续问题}
+% - Distinguish confirmed facts, careful inference, and next validation steps.
+%
+% Suggested figure provenance pattern:
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=\textwidth]{figures/example.png}
+% \caption{关键图示 \protect\footnotemark}
+% \end{figure}
+% \footnotetext{来源：某网页 / 某 PDF 第 12 页 / 某视频 00:12:31--00:12:46。若为裁剪或重绘，请明确说明。}
+%
+% Suggested formula pattern:
+% $$L = \sum_{i=1}^{n} w_i x_i$$
+% \begin{itemize}
+% \item $L$：总得分
+% \item $w_i$：第 $i$ 项权重
+% \item $x_i$：第 $i$ 项观测值
+% \end{itemize}
+%
+% Suggested source appendix:
+% \appendix
+% \section{来源清单}
+% \begin{longtable}{p{2cm}p{2cm}p{4cm}p{5cm}}
+% \toprule
+% Source ID & 模态 & 标题 / 标签 & 链接或路径 \\
+% \midrule
+% S1 & Web & 官方文档页面 & \url{https://example.com} \\
+% S2 & Video & 演讲视频 & \url{https://example.com/video} \\
+% \bottomrule
+% \end{longtable}
+
+%% --- 正文内容结束 --- %%
+
+\end{document}

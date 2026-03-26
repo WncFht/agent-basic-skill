@@ -11,14 +11,14 @@
 安装单个 skill：
 
 ```bash
-mkdir -p "$HOME/.codex/skills/jupyter-notebook"
-rsync -a --delete skills/jupyter-notebook/ "$HOME/.codex/skills/jupyter-notebook/"
+mkdir -p "$HOME/.codex/skills/deepresearch-skill"
+rsync -a --delete skills/deepresearch-skill/ "$HOME/.codex/skills/deepresearch-skill/"
 ```
 
 或使用统一安装器：
 
 ```bash
-python scripts/install_skill.py jupyter-notebook
+python scripts/install_skill.py deepresearch-skill
 ```
 
 安装带外部依赖仓的 wrapper：
@@ -61,6 +61,10 @@ Conventional Commits 工作流。
 ### [jupyter-notebook](skills/jupyter-notebook/SKILL.md)
 
 Notebook 创建、模板化与脚手架生成。
+
+### [deepresearch-skill](skills/deepresearch-skill/SKILL.md)
+
+多模态证据驱动的深度研究报告与 LaTeX/PDF 交付。
 
 ### [frontend-slides](skills/frontend-slides/SKILL.md)
 
@@ -120,6 +124,7 @@ agent-basic-skill/
 │   ├── report-download/
 │   ├── git-commit/
 │   ├── jupyter-notebook/
+│   ├── deepresearch-skill/
 │   ├── frontend-slides/
 │   ├── bilinote-video-note/
 │   ├── paperflow-pipeline-notes/

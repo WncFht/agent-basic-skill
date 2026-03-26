@@ -58,11 +58,13 @@ If you want managed copies under `~/.codex/skills` instead of, or in addition to
 
 ```bash
 cd ~/.codex/agent-basic-skill
-python scripts/install_skill.py jupyter-notebook
+python scripts/install_skill.py deepresearch-skill
 python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf
 ```
 
 This installer replaces `~/.codex/skills/<skill-name>` with the current repo copy and, for skills that ship an `external-repos.json`, it checks or clones the required external runtime repo first.
+
+Bundle-native skills can still ship companion assets. For example, `deepresearch-skill` includes a LaTeX report template, agent metadata, and a multimodal-ingestion reference, so install the whole `skills/deepresearch-skill/` directory rather than only `SKILL.md`.
 
 ## Migrating from Older Copies
 

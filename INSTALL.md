@@ -7,7 +7,7 @@
 安装单个 skill：
 
 ```bash
-python scripts/install_skill.py jupyter-notebook
+python scripts/install_skill.py deepresearch-skill
 ```
 
 安装带外部工具仓的 wrapper：
@@ -29,8 +29,8 @@ python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-no
 如果你明确知道外部仓已经准备好，也可以继续手动覆盖：
 
 ```bash
-mkdir -p "$HOME/.codex/skills/jupyter-notebook"
-rsync -a --delete skills/jupyter-notebook/ "$HOME/.codex/skills/jupyter-notebook/"
+mkdir -p "$HOME/.codex/skills/deepresearch-skill"
+rsync -a --delete skills/deepresearch-skill/ "$HOME/.codex/skills/deepresearch-skill/"
 ```
 
 刷新全部 skills：
@@ -78,6 +78,7 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 这个仓库里的部分 skill 不是单文件：
 
 - `jupyter-notebook` 依赖模板、参考文档和脚手架脚本
+- `deepresearch-skill` 依赖 LaTeX 模板、agent 元数据和多模态取证参考文档
 - `report-download` 依赖 Python 脚本和 `pyproject.toml`
 - `frontend-slides` 依赖 companion markdown、CSS 和脚本
 - 几个 wrapper skill 依赖路径解析脚本、参考文档和 `external-repos.json`

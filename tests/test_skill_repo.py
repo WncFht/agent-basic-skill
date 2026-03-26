@@ -40,6 +40,12 @@ EXPECTED_SKILLS = {
         "references/tutorial-patterns.md",
         "scripts/new_notebook.py",
     ],
+    "deepresearch-skill": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "assets/report-template.tex",
+        "references/multimodal-ingestion.md",
+    ],
     "frontend-slides": [
         "SKILL.md",
         "LICENSE",

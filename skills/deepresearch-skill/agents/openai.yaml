@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deep Research"
+  short_description: "Multimodal research reports with PDF evidence and citations"
+  default_prompt: "Use $deepresearch-skill to turn this question and its sources into an evidence-backed research report with figures, formulas, clickable links, a complete LaTeX file, and a rendered PDF."
