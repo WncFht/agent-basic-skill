@@ -33,7 +33,7 @@ description: Use when the user wants to turn a YouTube or Bilibili lecture, tuto
 - 默认 clone 路径：`$HOME/Desktop/src/video-note-pipeline`
 - 环境变量：`VIDEO_NOTE_PIPELINE_REPO`
 - source override key：`repo:WncFht/video-note-pipeline`
-- 默认 case workspace：`$HOME/Desktop/src/video_notes`
+- 默认 case workspace：`<runtime_repo>/.local/workspaces/video-notes`
 - workspace 环境变量：`VIDEO_NOTE_WORKSPACE_ROOT`
 - workspace override key：`workspace:video-notes`
 - 安装命令：在 `agent-basic-skill` 仓根目录运行 `python scripts/install_skill.py video-note-render-pdf`
@@ -62,7 +62,7 @@ uv sync --extra dev --extra asr-cpu
 1. 显式参数：`--runtime-repo`、`--workspace-root`
 2. 环境变量：`VIDEO_NOTE_PIPELINE_REPO`、`VIDEO_NOTE_WORKSPACE_ROOT`
 3. 本地 source override：`repo:WncFht/video-note-pipeline`、`workspace:video-notes`
-4. 默认候选路径：`$HOME/Desktop/src/video-note-pipeline`、`$HOME/Desktop/src/video_note_pipeline`、`$HOME/Desktop/src/video_notes`
+4. 默认候选路径：runtime repo 下的 `.local/workspaces/video-notes`；runtime repo 自身仍优先从 `$HOME/Desktop/src/video-note-pipeline`、`$HOME/Desktop/src/video_note_pipeline` 检测
 
 解析示例：
 
@@ -76,7 +76,7 @@ python scripts/resolve_video_note_paths.py --json
 python scripts/resolve_video_note_paths.py --print runtime_repo
 ```
 
-如果解析失败，先修正路径与环境，再继续后续 pipeline。不要把下载产物、cache、cookie、模型文件或 case 输出写回当前 skill 目录。
+如果解析失败，先修正路径与环境，再继续后续 pipeline。workspace 默认会在 runtime repo 下按需自动创建。不要把下载产物、cache、cookie、模型文件或 case 输出写回当前 skill 目录。
 
 ## 运行时边界
 

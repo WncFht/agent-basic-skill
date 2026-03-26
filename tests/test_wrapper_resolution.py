@@ -110,9 +110,8 @@ class WrapperResolutionTests(unittest.TestCase):
         script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
         with tempfile.TemporaryDirectory() as tmp_dir:
             runtime_repo = Path(tmp_dir) / "video-note-pipeline"
-            workspace_root = Path(tmp_dir) / "video_notes"
+            workspace_root = Path(tmp_dir) / "generated" / "video-notes"
             runtime_repo.mkdir()
-            workspace_root.mkdir()
             (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
             override_path = Path(tmp_dir) / "source-overrides.json"
             override_path.write_text(
@@ -142,9 +141,8 @@ class WrapperResolutionTests(unittest.TestCase):
         script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
         with tempfile.TemporaryDirectory() as tmp_dir:
             runtime_repo = Path(tmp_dir) / "video-note-pipeline"
-            workspace_root = Path(tmp_dir) / "video_notes"
+            workspace_root = Path(tmp_dir) / "generated" / "video-notes"
             runtime_repo.mkdir()
-            workspace_root.mkdir()
             (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
             result = run_script(
                 script,
@@ -165,9 +163,8 @@ class WrapperResolutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             home = Path(tmp_dir)
             runtime_repo = home / "Desktop" / "src" / "video-note-pipeline"
-            workspace_root = home / "Desktop" / "src" / "video_notes"
+            workspace_root = runtime_repo / ".local" / "workspaces" / "video-notes"
             runtime_repo.mkdir(parents=True)
-            workspace_root.mkdir(parents=True)
             (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
             result = run_script(script, env={"HOME": str(home)})
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)

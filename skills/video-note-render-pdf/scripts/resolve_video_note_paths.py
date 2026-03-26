@@ -11,6 +11,7 @@ from pathlib import Path
 
 RUNTIME_SOURCE_ID = "repo:WncFht/video-note-pipeline"
 WORKSPACE_SOURCE_ID = "workspace:video-notes"
+DEFAULT_WORKSPACE_RELATIVE = Path(".local") / "workspaces" / "video-notes"
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,11 +45,13 @@ def load_overrides(path: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.get("sources", {}).items()}
 
 
-def resolve_existing_dir(raw: str | None, markers: list[str] | None = None) -> Path | None:
+def resolve_directory(raw: str | None, markers: list[str] | None = None, *, must_exist: bool) -> Path | None:
     if not raw:
         return None
     path = Path(raw).expanduser().resolve()
-    if not path.is_dir():
+    if path.exists() and not path.is_dir():
+        return None
+    if must_exist and not path.is_dir():
         return None
     if markers and not all((path / marker).exists() for marker in markers):
         return None
@@ -62,18 +65,19 @@ def resolve_value(
     overrides: dict[str, str],
     default_candidates: list[str],
     markers: list[str] | None = None,
+    must_exist: bool = True,
 ) -> tuple[Path | None, str]:
-    path = resolve_existing_dir(explicit, markers)
+    path = resolve_directory(explicit, markers, must_exist=must_exist)
     if path is not None:
         return path, "explicit"
-    path = resolve_existing_dir(os.environ.get(env_var), markers)
+    path = resolve_directory(os.environ.get(env_var), markers, must_exist=must_exist)
     if path is not None:
         return path, f"env:{env_var}"
-    path = resolve_existing_dir(overrides.get(override_key), markers)
+    path = resolve_directory(overrides.get(override_key), markers, must_exist=must_exist)
     if path is not None:
         return path, "local-override"
     for candidate in default_candidates:
-        path = resolve_existing_dir(candidate, markers)
+        path = resolve_directory(candidate, markers, must_exist=must_exist)
         if path is not None:
             return path, "default-candidate"
     return None, ""
@@ -86,7 +90,7 @@ def emit_error(override_path: Path) -> int:
         "1. 传入 --runtime-repo 和 --workspace-root",
         "2. 设置 VIDEO_NOTE_PIPELINE_REPO 和 VIDEO_NOTE_WORKSPACE_ROOT",
         f"3. 在 {override_path} 中配置 {RUNTIME_SOURCE_ID} 与 {WORKSPACE_SOURCE_ID}",
-        "4. 将 runtime repo 放到 $HOME/Desktop/src/video-note-pipeline，workspace 放到 $HOME/Desktop/src/video_notes",
+        "4. 将 runtime repo 放到 $HOME/Desktop/src/video-note-pipeline；若未显式指定 workspace，默认会使用该 repo 下的 .local/workspaces/video-notes",
     ]
     print("\n".join(message), file=sys.stderr)
     return 1
@@ -108,16 +112,23 @@ def main() -> int:
         ],
         markers=["pyproject.toml"],
     )
+    workspace_defaults: list[str] = []
+    if runtime_repo is not None:
+        workspace_defaults.append(str((runtime_repo / DEFAULT_WORKSPACE_RELATIVE).resolve()))
+    workspace_defaults.extend(
+        [
+            str(Path.home() / "Desktop" / "src" / "video_notes"),
+            str(Path.home() / "Desktop" / "src" / "video-notes"),
+        ]
+    )
     workspace_root, workspace_resolution = resolve_value(
         explicit=args.workspace_root,
         env_var="VIDEO_NOTE_WORKSPACE_ROOT",
         override_key=WORKSPACE_SOURCE_ID,
         overrides=overrides,
-        default_candidates=[
-            str(Path.home() / "Desktop" / "src" / "video_notes"),
-            str(Path.home() / "Desktop" / "src" / "video-notes"),
-        ],
+        default_candidates=workspace_defaults,
         markers=None,
+        must_exist=False,
     )
 
     if runtime_repo is None or workspace_root is None:

@@ -66,4 +66,4 @@ thin wrapper 可以把重型执行逻辑下沉到外部 runtime repo，但不能
 - `paperflow-pipeline-notes` -> `WncFht/paperflow`
 - `shuiyuan-cache-skill` -> `WncFht/shuiyuan_exporter`
 - `bilibili-up-digest` -> `WncFht/PulseDeck`
-- `video-note-render-pdf` -> `WncFht/video-note-pipeline` + local `video_notes` workspace
+- `video-note-render-pdf` -> `WncFht/video-note-pipeline` + repo-local `.local/workspaces/video-notes` workspace

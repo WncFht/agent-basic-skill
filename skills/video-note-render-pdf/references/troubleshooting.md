@@ -18,10 +18,10 @@ uv sync --extra dev
 
 ## 找不到 workspace
 
-默认 workspace 是 `~/Desktop/src/video_notes`。如果该目录不存在：
+默认 workspace 是 `<runtime_repo>/.local/workspaces/video-notes`，首次运行时会自动创建。如果你想把 case 输出放到别处：
 
-- 先创建它，或
 - 设置 `VIDEO_NOTE_WORKSPACE_ROOT`
+- 或显式传入 `--workspace-root`
 
 不要把 case 目录写回当前 skill 目录。
 

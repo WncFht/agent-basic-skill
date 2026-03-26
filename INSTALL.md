@@ -71,7 +71,7 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 - `repo:WncFht/video-note-pipeline`
 - `workspace:video-notes`
 
-默认分别回退到 `~/Desktop/src/video-note-pipeline` 与 `~/Desktop/src/video_notes`。
+默认分别回退到 `~/Desktop/src/video-note-pipeline` 与该 runtime repo 下的 `.local/workspaces/video-notes`。
 
 ## 为什么不要只复制 `SKILL.md`
 
