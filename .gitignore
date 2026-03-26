@@ -12,6 +12,8 @@ local/source-overrides.*.json
 
 # Generated report artifacts
 reports/**/pdf_preview/
+reports/**/preview/
+reports/**/preview-*/
 reports/**/*.aux
 reports/**/*.fdb_latexmk
 reports/**/*.fls
@@ -22,4 +24,7 @@ reports/**/*.xdv
 reports/**/*-git-status.txt
 reports/**/*-pytest.log
 reports/**/*-test-counts.csv
+reports/**/source-ledger.md
 reports/**/source-module-test-map.txt
+reports/*-deepresearch/artifacts/
+reports/*-deepresearch/case/
