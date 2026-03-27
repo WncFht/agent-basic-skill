@@ -13,7 +13,7 @@ python scripts/install_skill.py deepresearch-skill
 安装带外部工具仓的 wrapper：
 
 ```bash
-python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1
 ```
 
 安装器的行为：
@@ -48,7 +48,7 @@ rsync -a --delete skills/ "$HOME/.codex/skills/"
 
 ## Wrapper skill 的外部仓准备
 
-`bilinote-video-note`、`paperflow-pipeline-notes`、`shuiyuan-cache-skill`、`bilibili-up-digest`、`video-note-render-pdf` 这几个 skill 只包含入口文档和桥接脚本；真正的工具仓仍应单独放在本机，例如 `~/Desktop/src/...`。
+`bilinote-video-note`、`paperflow-pipeline-notes`、`shuiyuan-cache-skill`、`bilibili-up-digest`、`video-note-render-pdf-v0`、`video-note-render-pdf-v1` 这几个 skill 只包含入口文档和桥接脚本；真正的工具仓仍应单独放在本机，例如 `~/Desktop/src/...`。
 
 推荐把本机 source override 放在：
 
@@ -66,7 +66,7 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 
 如果你就是在这个仓库里维护 skills，也可以改用被 `.gitignore` 忽略的 `local/source-overrides.json`。
 
-`video-note-render-pdf` 额外需要：
+`video-note-render-pdf-v0` / `video-note-render-pdf-v1` 额外需要：
 
 - `repo:WncFht/video-note-pipeline`
 - `workspace:video-notes`
@@ -83,7 +83,7 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 - `frontend-slides` 依赖 companion markdown、CSS 和脚本
 - 几个 wrapper skill 依赖路径解析脚本、参考文档和 `external-repos.json`
 
-`video-note-render-pdf` 还需要一个独立的 runtime repo 和一个本地 case workspace；安装器只负责准备或检查 runtime repo，不会在 skill 目录里创建案例工作区。
+`video-note-render-pdf-v0` 和 `video-note-render-pdf-v1` 都还需要一个独立的 runtime repo 和一个本地 case workspace；安装器只负责准备或检查 runtime repo，不会在 skill 目录里创建案例工作区。
 
 所以安装时应始终复制整个 `skills/<skill-name>/` 目录。
 

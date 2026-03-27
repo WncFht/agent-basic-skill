@@ -1,0 +1,35 @@
+{
+  "source_url": "",
+  "normalized_url": "",
+  "platform": "",
+  "video_id": "",
+  "runtime": {
+    "repo_root": "",
+    "workspace_root": "",
+    "adapter": "",
+    "part_selection": {
+      "mode": "",
+      "selected_parts": []
+    },
+    "subtitle_source": "",
+    "subtitle_language": "",
+    "subtitle_kind": "",
+    "transcript_source": "",
+    "recommended_mode": "",
+    "visual_only_reason": ""
+  },
+  "artifacts": {
+    "metadata": "metadata.json",
+    "preflight": "preflight.json",
+    "subtitle_probe": "subtitle_probe.json",
+    "transcriber_probe": "transcriber_probe.json",
+    "transcript_json": "transcript.json",
+    "transcript_srt": "transcript.srt",
+    "transcript_txt": "transcript.txt",
+    "cover_image": "cover.png",
+    "figures_dir": "figures",
+    "note_tex": "note.tex",
+    "note_pdf": "note.pdf",
+    "pdf_preview_dir": "pdf_preview"
+  }
+}

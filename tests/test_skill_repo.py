@@ -85,7 +85,22 @@ EXPECTED_SKILLS = {
         "scripts/resolve_pulsedeck_repo.py",
         "references/templates.md",
     ],
-    "video-note-render-pdf": [
+    "video-note-render-pdf-v0": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "assets/case-manifest.template.json",
+        "assets/notes-template.tex",
+        "external-repos.json",
+        "scripts/resolve_video_note_paths.py",
+        "references/adapter-contract.md",
+        "references/case-bundle-contract.md",
+        "references/figure-delivery-guidance.md",
+        "references/mode-routing.md",
+        "references/platform-notes.md",
+        "references/runbook.md",
+        "references/troubleshooting.md",
+    ],
+    "video-note-render-pdf-v1": [
         "SKILL.md",
         "agents/openai.yaml",
         "assets/case-manifest.template.json",
@@ -107,7 +122,8 @@ WRAPPER_SKILLS = {
     "paperflow-pipeline-notes",
     "shuiyuan-cache-skill",
     "bilibili-up-digest",
-    "video-note-render-pdf",
+    "video-note-render-pdf-v0",
+    "video-note-render-pdf-v1",
 }
 DISALLOWED_WRAPPER_NAMES = {
     "tests",

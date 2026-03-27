@@ -107,7 +107,7 @@ class WrapperResolutionTests(unittest.TestCase):
             )
 
     def test_video_note_prefers_local_override_for_runtime_and_workspace(self) -> None:
-        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        script = REPO_ROOT / "skills" / "video-note-render-pdf-v1" / "scripts" / "resolve_video_note_paths.py"
         with tempfile.TemporaryDirectory() as tmp_dir:
             runtime_repo = Path(tmp_dir) / "video-note-pipeline"
             workspace_root = Path(tmp_dir) / "generated" / "video-notes"
@@ -138,7 +138,7 @@ class WrapperResolutionTests(unittest.TestCase):
             self.assertEqual(payload["resolution"]["workspace_root"], "local-override")
 
     def test_video_note_prefers_env_for_runtime_and_workspace(self) -> None:
-        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        script = REPO_ROOT / "skills" / "video-note-render-pdf-v1" / "scripts" / "resolve_video_note_paths.py"
         with tempfile.TemporaryDirectory() as tmp_dir:
             runtime_repo = Path(tmp_dir) / "video-note-pipeline"
             workspace_root = Path(tmp_dir) / "generated" / "video-notes"
@@ -159,7 +159,7 @@ class WrapperResolutionTests(unittest.TestCase):
             self.assertEqual(payload["resolution"]["workspace_root"], "env:VIDEO_NOTE_WORKSPACE_ROOT")
 
     def test_video_note_uses_default_candidates(self) -> None:
-        script = REPO_ROOT / "skills" / "video-note-render-pdf" / "scripts" / "resolve_video_note_paths.py"
+        script = REPO_ROOT / "skills" / "video-note-render-pdf-v1" / "scripts" / "resolve_video_note_paths.py"
         with tempfile.TemporaryDirectory() as tmp_dir:
             home = Path(tmp_dir)
             runtime_repo = home / "Desktop" / "src" / "video-note-pipeline"

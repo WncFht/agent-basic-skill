@@ -211,7 +211,7 @@ class InstallSkillTests(unittest.TestCase):
         result = run_installer_for_skill(
             SOURCE_INSTALLER,
             REPO_ROOT,
-            "video-note-render-pdf",
+            "video-note-render-pdf-v1",
             {
                 "HOME": str(self.root),
                 "CODEX_HOME": str(self.root / ".codex"),
@@ -224,7 +224,7 @@ class InstallSkillTests(unittest.TestCase):
         self.assertEqual(dependency["repo"], "WncFht/video-note-pipeline")
         self.assertEqual(dependency["status"], "already_present")
         self.assertEqual(dependency["resolution"], "env:VIDEO_NOTE_PIPELINE_REPO")
-        installed_root = self.root / ".codex" / "skills" / "video-note-render-pdf"
+        installed_root = self.root / ".codex" / "skills" / "video-note-render-pdf-v1"
         self.assertTrue((installed_root / "SKILL.md").exists())
         self.assertTrue((installed_root / "external-repos.json").exists())
 

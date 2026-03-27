@@ -40,7 +40,8 @@ Prepare only the wrappers you actually plan to use:
 | `paperflow-pipeline-notes` | `WncFht/paperflow`, `research-notes` workspace | `~/Desktop/src/paperflow`, `~/Desktop/src/research-notes` | `PAPERFLOW_REPO`, `RESEARCH_NOTES_ROOT` |
 | `shuiyuan-cache-skill` | `WncFht/shuiyuan_exporter` | `~/Desktop/src/shuiyuan_exporter` | `SHUIYUAN_EXPORTER_REPO` |
 | `bilibili-up-digest` | `WncFht/PulseDeck` | `~/Desktop/src/PulseDeck` | `BILIBILI_UP_DIGEST_REPO` |
-| `video-note-render-pdf` | `WncFht/video-note-pipeline`, `video_notes` workspace | `~/Desktop/src/video-note-pipeline`, `~/Desktop/src/video_notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
+| `video-note-render-pdf-v0` | `WncFht/video-note-pipeline`, repo-local `video-notes` workspace | `~/Desktop/src/video-note-pipeline`, `<runtime_repo>/.local/workspaces/video-notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
+| `video-note-render-pdf-v1` | `WncFht/video-note-pipeline`, repo-local `video-notes` workspace | `~/Desktop/src/video-note-pipeline`, `<runtime_repo>/.local/workspaces/video-notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
 
 If you prefer local overrides instead of the default paths, write them to:
 
@@ -59,7 +60,7 @@ If you want managed copies under `~/.codex/skills` instead of, or in addition to
 ```bash
 cd ~/.codex/agent-basic-skill
 python scripts/install_skill.py deepresearch-skill
-python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1
 ```
 
 This installer replaces `~/.codex/skills/<skill-name>` with the current repo copy and, for skills that ship an `external-repos.json`, it checks or clones the required external runtime repo first.
@@ -85,7 +86,13 @@ You should see a symlink or junction pointing to `~/.codex/agent-basic-skill/ski
 For wrapper skills, verify the resolver after preparing the runtime:
 
 ```bash
-python ~/.agents/skills/agent-basic-skill/video-note-render-pdf/scripts/resolve_video_note_paths.py --json
+python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v1/scripts/resolve_video_note_paths.py --json
+
+如果你想验证基线版，也可以运行：
+
+```bash
+python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v0/scripts/resolve_video_note_paths.py --json
+```
 ```
 
 ## Updating

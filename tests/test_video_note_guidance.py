@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VIDEO_NOTE_ROOT = REPO_ROOT / "skills" / "video-note-render-pdf"
+VIDEO_NOTE_ROOT = REPO_ROOT / "skills" / "video-note-render-pdf-v1"
 
 
 class VideoNoteGuidanceTests(unittest.TestCase):

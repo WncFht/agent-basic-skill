@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "repo:WncFht/video-note-pipeline",
+      "repo": "WncFht/video-note-pipeline",
+      "clone_url": "https://github.com/WncFht/video-note-pipeline.git",
+      "default_clone_dir": "~/Desktop/src/video-note-pipeline",
+      "default_detect_paths": [
+        "~/Desktop/src/video-note-pipeline",
+        "~/Desktop/src/video_note_pipeline"
+      ],
+      "env_var": "VIDEO_NOTE_PIPELINE_REPO",
+      "override_key": "repo:WncFht/video-note-pipeline",
+      "markers": [
+        "pyproject.toml",
+        "README.md"
+      ],
+      "bootstrap_hint": "Run `uv sync --extra dev` from the runtime repo root, use `uv run video-note cookies-export <platform>` if cookies are needed, then run the `video-note` CLI commands there."
+    }
+  ]
+}

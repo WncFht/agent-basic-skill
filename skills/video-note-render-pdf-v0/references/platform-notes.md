@@ -1,6 +1,6 @@
 # Platform Notes
 
-统一 `video-note-render-pdf` wrapper 仍然需要保留平台特有边界。平台差异不应该重新长回两个平行 skill，但也不能完全消失在 adapter 实现里。
+统一 `video-note-render-pdf-v0` wrapper 仍然需要保留平台特有边界。平台差异不应该重新长回两个平行 skill，但也不能完全消失在 adapter 实现里。
 
 ## YouTube
 
