@@ -94,6 +94,7 @@ EXPECTED_SKILLS = {
         "scripts/resolve_video_note_paths.py",
         "references/adapter-contract.md",
         "references/case-bundle-contract.md",
+        "references/coverage-and-revision-guidance.md",
         "references/figure-delivery-guidance.md",
         "references/mode-routing.md",
         "references/platform-notes.md",

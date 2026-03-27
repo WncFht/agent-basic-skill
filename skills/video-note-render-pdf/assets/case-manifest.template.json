@@ -30,6 +30,8 @@
     "figures_dir": "figures",
     "note_tex": "note.tex",
     "note_pdf": "note.pdf",
-    "pdf_preview_dir": "pdf_preview"
+    "pdf_preview_dir": "pdf_preview",
+    "section_alignment": "work/section_alignment.json",
+    "review_dir": "review"
   }
 }

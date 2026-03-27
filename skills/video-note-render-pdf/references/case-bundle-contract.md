@@ -22,6 +22,7 @@
 ├── overview_frames/
 ├── montages/
 ├── pdf_preview/
+├── review/
 └── work/
 ```
 
@@ -40,7 +41,15 @@
 - `overview_frames/`: 粗采样总览帧
 - `montages/`: 高召回阶段使用的 contact sheet
 - `pdf_preview/`: PDF 页面预览图，便于快速肉眼检查
+- `review/`: coverage、figure、page 三类 revision note
 - `work/`: 中间候选帧、probe log、转写 log、overview/build 摘要
+
+对于长视频、高字幕量或 evidence-heavy case，建议额外保留：
+
+- `work/section_alignment.json`: 文档章节和视频时间段的轻量对齐结果
+- `review/coverage-note.md`
+- `review/figure-audit.md`
+- `review/page-flags.md`
 
 ## `case_manifest.json`
 
@@ -59,6 +68,8 @@
 - `runtime.transcript_source`
 - `runtime.recommended_mode`
 - `runtime.visual_only_reason`
+- `artifacts.section_alignment`
+- `artifacts.review_dir`
 - `artifacts.*`
 
 可以直接从 `assets/case-manifest.template.json` 起草。
@@ -69,6 +80,7 @@
 - 若使用平台字幕，建议同时记录 `subtitle_language` 与 `subtitle_kind`
 - 若进入 `visual-only`，`runtime.visual_only_reason` 不得为空
 - `artifacts.cover_image`、`artifacts.figures_dir` 与 `artifacts.pdf_preview_dir` 应指向本地 case 内的稳定路径
+- 若生成了 coverage 或 review artifact，建议在 `artifacts.section_alignment` 和 `artifacts.review_dir` 中显式记录它们
 
 ## 编译与 QA
 
@@ -79,3 +91,4 @@ latexmk -xelatex -interaction=nonstopmode note.tex
 ```
 
 若生成 `note.pdf`，建议同时输出页面预览到 `pdf_preview/`，用于快速检查跨页漂移、footnote 位置和图像可读性。
+对于需要复盘 coverage 或选图决策的 case，建议同时保留 `review/` 与 `work/section_alignment.json`。
