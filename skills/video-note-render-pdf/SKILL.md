@@ -22,7 +22,7 @@ description: Use when the user wants to turn a YouTube or Bilibili lecture, tuto
 统一 skill 不再按平台拆成两个平行入口，但平台特有边界仍然存在：
 
 - YouTube：优先使用公开视频可直接获得的官方字幕，手工字幕优先于自动字幕
-- Bilibili：字幕更稀缺，1080P+ 常常需要 cookies，分 P 视频要先明确处理范围，`b23.tv` 需要归一化，danmaku 不能作为教学内容源
+- Bilibili：字幕更稀缺，1080P+ 常常需要 cookies，分 P 视频要先明确处理范围，`b23.tv` 需要归一化，弹幕不能作为教学内容源
 - 当平台字幕与 cookies 字幕都不可用时，才进入 ASR fallback；若字幕和 ASR 都不可接受，允许转入 `visual-only` 的取图与重绘思路
 
 平台细则见 `references/platform-notes.md`。

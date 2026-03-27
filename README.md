@@ -58,6 +58,10 @@ PDF 解析、生成与版式校验。
 
 Conventional Commits 工作流。
 
+### [jujutsu](skills/jujutsu/SKILL.md)
+
+Jujutsu (`jj`) 版本控制工作流与 agent 安全操作约束。
+
 ### [jupyter-notebook](skills/jupyter-notebook/SKILL.md)
 
 Notebook 创建、模板化与脚手架生成。
@@ -123,6 +127,7 @@ agent-basic-skill/
 │   ├── pdf/
 │   ├── report-download/
 │   ├── git-commit/
+│   ├── jujutsu/
 │   ├── jupyter-notebook/
 │   ├── deepresearch-skill/
 │   ├── frontend-slides/

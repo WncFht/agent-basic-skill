@@ -26,6 +26,10 @@ EXPECTED_SKILLS = {
     "git-commit": [
         "SKILL.md",
     ],
+    "jujutsu": [
+        "SKILL.md",
+        "LICENSE.txt",
+    ],
     "jupyter-notebook": [
         "SKILL.md",
         "LICENSE.txt",
