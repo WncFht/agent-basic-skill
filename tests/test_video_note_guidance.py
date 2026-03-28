@@ -30,7 +30,8 @@ class VideoNoteGuidanceTests(unittest.TestCase):
         content = (VIDEO_NOTE_ROOT / "references" / "platform-notes.md").read_text(encoding="utf-8")
         self.assertIn("分 P", content)
         self.assertIn("b23.tv", content)
-        self.assertIn("danmaku", content)
+        self.assertIn("弹幕", content)
+        self.assertNotIn("danmaku", content)
         self.assertIn("visual-only", content)
 
     def test_figure_delivery_guidance_exists(self) -> None:

@@ -156,7 +156,7 @@ runtime repo 负责：
 - small talk
 - sponsorship
 - channel logistics，例如“一键三连”、关注、投币、抽奖、口播推广
-- Bilibili danmaku 或其他高噪声互动文本
+- Bilibili 弹幕 或其他高噪声互动文本
 - 纯礼貌性的 closing pleasantries
 
 如果讲者在结尾部分给出了总结、局限、经验判断、后续方向、实践建议或开放问题，应把这些内容保留到最终 `总结与延伸` 中，而不是简单裁掉。若 transcript 质量不足以支撑判断，先修事实层 artifact，必要时切换到 `visual-only` 思维模式，而不是硬写。

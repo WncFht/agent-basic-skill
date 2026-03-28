@@ -116,6 +116,22 @@ EXPECTED_SKILLS = {
         "references/runbook.md",
         "references/troubleshooting.md",
     ],
+    "video-note-render-pdf-v2": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "assets/case-manifest.template.json",
+        "assets/notes-template.tex",
+        "external-repos.json",
+        "scripts/resolve_video_note_paths.py",
+        "references/adapter-contract.md",
+        "references/case-bundle-contract.md",
+        "references/coverage-and-revision-guidance.md",
+        "references/figure-delivery-guidance.md",
+        "references/mode-routing.md",
+        "references/platform-notes.md",
+        "references/runbook.md",
+        "references/troubleshooting.md",
+    ],
 }
 WRAPPER_SKILLS = {
     "bilinote-video-note",
@@ -124,6 +140,7 @@ WRAPPER_SKILLS = {
     "bilibili-up-digest",
     "video-note-render-pdf-v0",
     "video-note-render-pdf-v1",
+    "video-note-render-pdf-v2",
 }
 DISALLOWED_WRAPPER_NAMES = {
     "tests",
@@ -205,6 +222,15 @@ class SkillRepoTests(unittest.TestCase):
                     msg=f"missing required manifest fields in {skill_name}: {repo_spec}",
                 )
                 self.assertTrue(repo_spec["markers"], msg=f"empty markers in {skill_name}")
+
+    def test_video_note_skills_use_chinese_danmaku_term(self) -> None:
+        for skill_name in ("video-note-render-pdf-v0", "video-note-render-pdf-v1", "video-note-render-pdf-v2"):
+            skill_dir = SKILLS_ROOT / skill_name
+            for path in skill_dir.rglob("*"):
+                if not path.is_file() or path.suffix not in {".md", ".yaml"}:
+                    continue
+                content = path.read_text(encoding="utf-8")
+                self.assertNotIn("danmaku", content, msg=f"unexpected danmaku in {path}")
 
 
 if __name__ == "__main__":

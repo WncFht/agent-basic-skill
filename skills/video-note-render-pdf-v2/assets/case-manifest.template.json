@@ -1,0 +1,54 @@
+{
+  "source_url": "",
+  "normalized_url": "",
+  "platform": "",
+  "video_id": "",
+  "runtime": {
+    "repo_root": "",
+    "workspace_root": "",
+    "adapter": "",
+    "part_selection": {
+      "mode": "",
+      "selected_parts": []
+    },
+    "subtitle_source": "",
+    "subtitle_language": "",
+    "subtitle_kind": "",
+    "transcript_source": "",
+    "recommended_mode": "",
+    "visual_only_reason": ""
+  },
+  "routing": {
+    "carrier_family": "",
+    "support_profile": "",
+    "recall_budget": "",
+    "override_reason": ""
+  },
+  "length_budget": {
+    "transcript_txt_chars": 0,
+    "min_note_chars": 0,
+    "soft_note_char_range": [
+      0,
+      0
+    ],
+    "compression_ratio": 0.0
+  },
+  "artifacts": {
+    "metadata": "metadata.json",
+    "preflight": "preflight.json",
+    "subtitle_probe": "subtitle_probe.json",
+    "transcriber_probe": "transcriber_probe.json",
+    "transcript_json": "transcript.json",
+    "transcript_srt": "transcript.srt",
+    "transcript_txt": "transcript.txt",
+    "cover_image": "cover.png",
+    "figures_dir": "figures",
+    "note_tex": "note.tex",
+    "note_pdf": "note.pdf",
+    "pdf_preview_dir": "pdf_preview",
+    "section_alignment": "work/section_alignment.json",
+    "visual_obligation_ledger": "work/visual_obligation_ledger.json",
+    "review_dir": "review",
+    "revision_actions": "review/revision-actions.json"
+  }
+}

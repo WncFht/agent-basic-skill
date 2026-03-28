@@ -1,22 +1,29 @@
 ---
-name: video-note-render-pdf-v1
-description: Use when the user wants to turn a YouTube or Bilibili lecture, tutorial, or technical talk into a structured Chinese LaTeX/PDF note that preserves the video's real teaching content, scales coverage roughly with subtitle and time emphasis, selects figures through writing-driven evidence or explanation needs, ends with a final synthesis chapter, and routes through the unified video-note wrapper plus an external runtime repo.
+name: video-note-render-pdf-v2
+description: Use when the user wants to turn a YouTube or Bilibili lecture, tutorial, or technical talk into a structured Chinese LaTeX/PDF note that preserves the video's real teaching content, enforces subtitle-char length guardrails, routes figure strategy through carrier-family/support-profile/recall-budget, records visual obligations explicitly, and closes with a real post-build revision loop through the unified video-note wrapper plus an external runtime repo.
 ---
 
-# Video Note Render PDF Wrapper
+# Video Note Render PDF Wrapper v2
 
-这是一个 thin wrapper。真正的运行时代码应位于外部 `video-note-pipeline` 类 runtime repo 中；当前 skill 只保留统一入口、模板、参考文档和轻量路径解析脚本。
+这是在 `video-note-render-pdf-v1` 基础上改写的 thin wrapper。真正的运行时代码仍然位于外部 `video-note-pipeline` 类 runtime repo；当前 skill 只保留统一入口、模板、参考文档和轻量路径解析脚本。
+
+v2 的核心变化只有四件事：
+
+- 用字幕字数 guardrail 控制总字数下限，而不是只说“roughly proportional”
+- 把 mode routing 改成 `carrier family + support profile + recall budget` 三轴
+- 把图片规划升级成显式的 `visual obligation ledger`
+- 把事后修改从“写 review 文件”升级成“review 触发具体 patch 和 action log”
 
 ## Goal
 
 统一 video-note pipeline 的目标仍然是产出一份高质量、可交付的中文 `.tex` 讲义和最终 PDF，而不是只把字幕改写成摘要。默认交付应尽量满足：
 
 - 以视频真实教学内容为主，而不是仅依赖字幕转写
-- 主体篇幅与视频内容强度大致同向扩张，而不是长视频也写成固定厚度摘要
+- 主体篇幅与视频内容强度同向扩张，尤其不能把长视频压成固定厚度摘要
 - 首页优先使用视频官方封面图，而不是任意视频帧
-- 图片由正文写作需求驱动，优先选择真正必要且清晰的高信息量 figures
+- 图片由正文写作需求和视觉义务驱动，而不是按“每章几张图”硬配额
 - 文末包含一个真正的 `\section{总结与延伸}`，吸收讲者有价值的 closing discussion，并加入你自己的结构化提炼
-- 完稿后重新对照字幕和关键图片做事后修订，而不是把重复 build 视为已经完成复查
+- 完稿后重新对照字幕、关键图片和页面预览做事后修订，而不是把重复 build 视为已经完成复查
 - 最终结果包含完整 `.tex`、本地图片资源和成功编译的 PDF
 
 ## 平台摘要
@@ -38,7 +45,7 @@ description: Use when the user wants to turn a YouTube or Bilibili lecture, tuto
 - 默认 case workspace：`<runtime_repo>/.local/workspaces/video-notes`
 - workspace 环境变量：`VIDEO_NOTE_WORKSPACE_ROOT`
 - workspace override key：`workspace:video-notes`
-- 安装命令：在 `agent-basic-skill` 仓根目录运行 `python scripts/install_skill.py video-note-render-pdf-v1`
+- 安装命令：在 `agent-basic-skill` 仓根目录运行 `python scripts/install_skill.py video-note-render-pdf-v2`
 
 安装器会读取同目录下的 `external-repos.json`；它只在显式安装时检查或 clone 外部仓，运行时 resolver 仍然只做检测不做安装。
 
@@ -117,8 +124,11 @@ runtime repo 负责：
 推荐同时维护：
 
 - `case_manifest.json`
+- `work/section_alignment.json`
+- `work/visual_obligation_ledger.json`
 - `overview_frames/` 或 montage
 - `figures/`
+- `review/revision-actions.json`
 - `note.tex`
 - `note.pdf`
 
@@ -142,6 +152,35 @@ runtime repo 负责：
 - 保留时间戳，不要过早压平为纯文本
 - 记录字幕来源、语言、是否使用 cookies
 - ASR 只负责 fallback，不是默认主路径
+
+## Length Guardrail
+
+正式写正文前，先根据 `transcript.txt` 计算字数 guardrail。这里控制的是 `note.tex` 的正文总字数，不是 PDF 页数。
+
+先算四个字段：
+
+- `transcript_txt_chars`
+- `min_note_chars`
+- `soft_note_char_range`
+- `compression_ratio = min_note_chars / transcript_txt_chars`
+
+默认先用这张分段启发式表：
+
+| 字幕字数 `S` | 建议保底下限 | 常见舒适区 |
+| --- | --- | --- |
+| `S < 5000` | 至少 `6000` 字 | `6000 ~ 12000` 字 |
+| `5000 <= S < 15000` | 至少 `0.55S` | `0.55S ~ 1.00S` |
+| `15000 <= S < 35000` | 至少 `0.40S` | `0.40S ~ 0.70S` |
+| `35000 <= S < 70000` | 至少 `0.30S` | `0.30S ~ 0.55S` |
+| `S >= 70000` | 至少 `0.18S` | `0.18S ~ 0.35S` |
+
+执行时遵循：
+
+- 优先把这张表写入 `work/section_alignment.json`
+- 页数只作为排版诊断，不要写进预算目标
+- 低于 `min_note_chars` 时，必须再做一次 coverage pass
+- 高于软范围通常可以接受，只要新增内容确实有教学价值
+- v2 的默认取向是“宁可略长，不要明显偏短”
 
 ## Teaching Content Rules
 
@@ -170,11 +209,13 @@ runtime repo 负责：
 3. 如果需要 cookies，先在 runtime repo 中运行 `uv run video-note cookies-export youtube --browser edge` 或 `uv run video-note cookies-export bilibili --browser edge`。
 4. 在 runtime repo 中按顺序运行 `uv run video-note prepare <url>`、`uv run video-note probe <url>`、`uv run video-note transcript <url>`、`uv run video-note overview <url>`。
 5. 检查 `recommended_mode`、overview montage、part selection 和 transcript 质量，先确认内容覆盖风险，而不是直接进入固定配图节奏。
-6. 先做 lightweight content map，按主题段或时间段估计主体章节的相对写作权重；必要时把结果落成 `work/section_alignment.json` 或 `review/coverage-note.md`。
-7. 从 `assets/notes-template.tex` 起稿，必要时用 `assets/case-manifest.template.json` 固定 case 元数据，并在 `talking-head / visual-light / static-outline / board-heavy` 之外补充 `evidence-led / explanation-led / demo-led` 的 support profile 判断。
-8. 先写主体正文，再按 claim 或解释需要选图；优先区分这是 `evidence image`、`explanation image`、`orientation image` 还是 `anchor image`，并依据字幕时间窗和 montage 结果做高召回取图。
-9. 写出完整 `note.tex`，用 `uv run video-note build <url>` 或 `latexmk -xelatex` 编译并生成 `pdf_preview/`。
-10. 至少做一轮三段式 revision loop：coverage pass 重新对照字幕，figure pass 重新审阅图片必要性与清晰度，page pass 结合 `pdf_preview/` 修版式与页面级问题。
+6. 先计算长度 guardrail，并把 `transcript_txt_chars / min_note_chars / soft_note_char_range / compression_ratio` 写入 `work/section_alignment.json`。
+7. 在写正文前明确三轴路由：`carrier family + support profile + recall budget`。每个标签的中文解释见 `references/mode-routing.md`。
+8. 先做 lightweight content map，按主题段或时间段估计主体章节的相对写作权重；长视频、高字幕量或 evidence-heavy case 默认把结果显式落成 `work/section_alignment.json` 或 `review/coverage-note.md`。
+9. 对 `demo-led`、`anchor-dense`、`document-led evidence` 这三类段落，先建 `work/visual_obligation_ledger.json`，再决定图数和图的来源。
+10. 从 `assets/notes-template.tex` 起稿，必要时用 `assets/case-manifest.template.json` 固定 case 元数据。正文先写完整，再按视觉义务去兑现或豁免每一张图。
+11. 写出完整 `note.tex`，用 `uv run video-note build <url>` 或 `latexmk -xelatex` 编译并生成 `pdf_preview/`。
+12. 至少做一轮三段式 revision loop：coverage pass 重新对照字幕，figure pass 重新审阅图片必要性与清晰度，page pass 结合 `pdf_preview/` 修版式与页面级问题；如果 review 发现中等以上问题，必须把动作写进 `review/revision-actions.json`。
 
 ## 写作与配图规则
 
@@ -182,10 +223,10 @@ runtime repo 负责：
 2. 使用 `\section{...}` / `\subsection{...}` 重建教学结构，而不是机械抄字幕。
 3. 首页优先使用视频官方封面图，而不是任意视频帧。
 4. 主体章节与小节的篇幅分配，应大致反映视频中各主要段落的时长、字幕密度与论证强度；不要把长视频主体默认压成固定厚度摘要。
-5. 每个大章节以 `\subsection{本章小结}` 收束；有必要时可增加 `\subsection{拓展阅读}`；文末必须有 `\section{总结与延伸}`，并纳入 speaker closing discussion、你的 own distillation 与明确 takeaways。
-6. 在正式写作前先做轻量 content map；对长视频、高字幕量或 evidence-heavy case，建议把 coverage 判断显式落成 artifact。
-7. 图片必须由正文需要驱动。先判断该段需要的是证据、解释、导向还是场景锚点，再决定去视频帧、外部原件还是自绘图找支撑。
-8. 任何最终保留的图片，都应回答为什么需要它、为什么选这个来源、为什么不改用更清晰的裁剪/放大/对照/重绘版本。
+5. 最终 `note.tex` 字数默认不应低于 `min_note_chars`。若接近或跌破下限，先扩 coverage，再考虑删图或压缩。
+6. 每个大章节以 `\subsection{本章小结}` 收束；有必要时可增加 `\subsection{拓展阅读}`；文末必须有 `\section{总结与延伸}`，并纳入 speaker closing discussion、你的 own distillation 与明确 takeaways。
+7. 图片必须由视觉义务驱动。先判断这段需要的是 `evidence`、`explanation`、`demo-pair`、`anchor-pair` 还是 `orientation`，再决定去视频帧、外部原件还是自绘图找支撑。
+8. 任何写进 `visual_obligation_ledger` 且最终仍保留在正文里的义务，必须落成三选一：保留 figure、改成 derived figure、显式记录 waiver 原因。
 9. 对来自视频帧的图像，禁止接受潦草的图像处理；若裁剪、放大或 pair 之后仍不清楚，应改成重绘、外部原件或直接删图。
 10. 数学公式使用展示公式，并紧跟扁平列表解释符号。
 11. 代码示例使用 `lstlisting`，并带描述性 `caption`。
@@ -198,7 +239,11 @@ runtime repo 负责：
 18. 截图仍不够清晰时，优先补充 TikZ / PGFPlots 或外部生成图，而不是塞进低信息截图。
 19. 完稿后至少重新阅读一次字幕中的重点段和最终保留的关键图片，再决定是否补写、删图或改图。
 
-更细的 figure heuristics、delivery expectations 与最终章节检查项见 `references/figure-delivery-guidance.md`；coverage 目标与 revision loop 见 `references/coverage-and-revision-guidance.md`。
+更细的三轴路由、visual obligation ledger、delivery expectations 与 revision contract 见：
+
+- `references/mode-routing.md`
+- `references/figure-delivery-guidance.md`
+- `references/coverage-and-revision-guidance.md`
 
 ## 编译与验证
 
@@ -211,11 +256,13 @@ latexmk -xelatex -interaction=nonstopmode note.tex
 最低验证要求：
 
 - `.tex` 可编译
+- `work/section_alignment.json` 已记录长度 guardrail 与 routing 结论
+- `work/visual_obligation_ledger.json` 对需要高视觉召回的段落已填写或明确免除
 - PDF 中封面图、关键 figures、footnote provenance 与目录结构都正确
 - 没有 `[cite]` 占位符
 - figure 的时间区间与正文描述一致
-- 主体章节篇幅没有明显背离视频重点分布
-- 最终保留的图片都通过了必要性与清晰度复查
+- 主体章节篇幅没有明显跌破 `min_note_chars` 约束
+- 若 `review/*.md` 写出中等以上问题，则 `review/revision-actions.json` 里必须能看到对应动作；否则不能声称 revision loop 已完成
 
 ## 交付物
 
@@ -226,12 +273,14 @@ latexmk -xelatex -interaction=nonstopmode note.tex
 - 正文引用的本地 figure assets
 - 成功编译的 `note.pdf`
 
-如果本次 case 依赖 ASR 或需要复盘字幕来源，推荐同时保留：
+以下场景推荐同时保留：
 
 - `transcript.srt`
 - `case_manifest.json`
+- `work/section_alignment.json`
+- `work/visual_obligation_ledger.json`
+- `review/revision-actions.json`
 - `pdf_preview/` 或其他 QA 产物
-- `review/` 或 `work/` 下的 coverage / figure / page 修订痕迹
 
 如果在 Windows 上运行 runtime repo，优先确认：
 
@@ -242,10 +291,10 @@ latexmk -xelatex -interaction=nonstopmode note.tex
 ## 按需读取的参考文档
 
 - `references/adapter-contract.md`
-- `references/coverage-and-revision-guidance.md`
 - `references/case-bundle-contract.md`
-- `references/platform-notes.md`
+- `references/coverage-and-revision-guidance.md`
 - `references/figure-delivery-guidance.md`
 - `references/mode-routing.md`
+- `references/platform-notes.md`
 - `references/runbook.md`
 - `references/troubleshooting.md`

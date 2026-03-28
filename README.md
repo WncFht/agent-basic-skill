@@ -24,7 +24,7 @@ python scripts/install_skill.py deepresearch-skill
 安装带外部依赖仓的 wrapper：
 
 ```bash
-python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1 video-note-render-pdf-v2
 ```
 
 这个命令会先检查 wrapper 声明的外部仓：
@@ -98,6 +98,10 @@ HTML 幻灯片与 PPT 转网页。
 
 统一 YouTube / Bilibili 视频讲义 wrapper，解析外部 runtime repo 与本地 case workspace。
 
+### [video-note-render-pdf-v2](skills/video-note-render-pdf-v2/SKILL.md)
+
+在 v1 基础上增加字幕字数 guardrail、三轴路由、视觉义务 ledger 与 revision action contract 的新版 wrapper。
+
 ## Thin Wrapper 说明
 
 仓库里的 wrapper skill 只保留入口文档和少量桥接脚本，真正的运行时代码仍在外部工具仓里。约束见 [docs/thin-wrapper-skills.md](docs/thin-wrapper-skills.md)。
@@ -140,13 +144,14 @@ agent-basic-skill/
 │   ├── shuiyuan-cache-skill/
 │   ├── bilibili-up-digest/
 │   ├── video-note-render-pdf-v0/
-│   └── video-note-render-pdf-v1/
+│   ├── video-note-render-pdf-v1/
+│   └── video-note-render-pdf-v2/
 └── tests/
 ```
 
 ## 迁移说明
 
-旧的 `~/.codex/skills/video-note-skill` 已转为迁移来源，不再作为长期主源维护。当前统一入口保留 `video-note-render-pdf-v0` 基线版与 `video-note-render-pdf-v1` 改进版；平台差异应继续下沉到外部 runtime repo 的 adapter 层，而不是在 bundle 仓里维护两套平行 skill。
+旧的 `~/.codex/skills/video-note-skill` 已转为迁移来源，不再作为长期主源维护。当前统一入口保留 `video-note-render-pdf-v0` 基线版、`video-note-render-pdf-v1` 改进版与 `video-note-render-pdf-v2` 结构化增强版；平台差异应继续下沉到外部 runtime repo 的 adapter 层，而不是在 bundle 仓里维护两套平行 skill。
 
 ## 验证
 

@@ -42,6 +42,7 @@ Prepare only the wrappers you actually plan to use:
 | `bilibili-up-digest` | `WncFht/PulseDeck` | `~/Desktop/src/PulseDeck` | `BILIBILI_UP_DIGEST_REPO` |
 | `video-note-render-pdf-v0` | `WncFht/video-note-pipeline`, repo-local `video-notes` workspace | `~/Desktop/src/video-note-pipeline`, `<runtime_repo>/.local/workspaces/video-notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
 | `video-note-render-pdf-v1` | `WncFht/video-note-pipeline`, repo-local `video-notes` workspace | `~/Desktop/src/video-note-pipeline`, `<runtime_repo>/.local/workspaces/video-notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
+| `video-note-render-pdf-v2` | `WncFht/video-note-pipeline`, repo-local `video-notes` workspace | `~/Desktop/src/video-note-pipeline`, `<runtime_repo>/.local/workspaces/video-notes` | `VIDEO_NOTE_PIPELINE_REPO`, `VIDEO_NOTE_WORKSPACE_ROOT` |
 
 If you prefer local overrides instead of the default paths, write them to:
 
@@ -60,7 +61,7 @@ If you want managed copies under `~/.codex/skills` instead of, or in addition to
 ```bash
 cd ~/.codex/agent-basic-skill
 python scripts/install_skill.py deepresearch-skill
-python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1
+python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1 video-note-render-pdf-v2
 ```
 
 This installer replaces `~/.codex/skills/<skill-name>` with the current repo copy and, for skills that ship an `external-repos.json`, it checks or clones the required external runtime repo first.
@@ -92,6 +93,12 @@ python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v1/scripts/resol
 
 ```bash
 python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v0/scripts/resolve_video_note_paths.py --json
+```
+
+如果你想验证 v2，也可以运行：
+
+```bash
+python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v2/scripts/resolve_video_note_paths.py --json
 ```
 ```
 
