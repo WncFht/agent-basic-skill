@@ -1,0 +1,4 @@
+interface:
+  display_name: "Public AI Resource Research"
+  short_description: "Investigate public AI stations, relays, and model claims"
+  default_prompt: "Use $public-ai-resource-research to investigate public AI stations, relay sites, model claims, and status signals, then produce a structured evidence ledger."

@@ -9,6 +9,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
 AGENT_INSTALL_DOC = REPO_ROOT / ".codex" / "INSTALL.md"
 EXPECTED_SKILLS = {
+    "public-ai-resource-research": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/ledger-schema.md",
+        "references/search-recipes.md",
+        "scripts/init_case.py",
+    ],
+    "relay-endpoint-probe": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "scripts/probe_relay.py",
+        "references/failure-patterns.md",
+        "references/local-integration.md",
+    ],
     "pdf": [
         "SKILL.md",
         "agents/openai.yaml",

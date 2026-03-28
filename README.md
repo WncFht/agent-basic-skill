@@ -70,6 +70,14 @@ Notebook 创建、模板化与脚手架生成。
 
 多模态证据驱动的深度研究报告与 LaTeX/PDF 交付。
 
+### [public-ai-resource-research](skills/public-ai-resource-research/SKILL.md)
+
+公开 AI 资源站点、导航页、relay、中转站、模型与状态线索的结构化调研与 ledger 产出。
+
+### [relay-endpoint-probe](skills/relay-endpoint-probe/SKILL.md)
+
+探测 LLM 中转接口、识别 OpenAI/Codex/Anthropic 兼容性，并衔接本机 CCH/check-cx 接入。
+
 ### [frontend-slides](skills/frontend-slides/SKILL.md)
 
 HTML 幻灯片与 PPT 转网页。
@@ -138,6 +146,8 @@ agent-basic-skill/
 │   ├── jujutsu/
 │   ├── jupyter-notebook/
 │   ├── deepresearch-skill/
+│   ├── public-ai-resource-research/
+│   ├── relay-endpoint-probe/
 │   ├── frontend-slides/
 │   ├── bilinote-video-note/
 │   ├── paperflow-pipeline-notes/

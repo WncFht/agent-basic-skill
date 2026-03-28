@@ -1,0 +1,4 @@
+interface:
+  display_name: "Relay Endpoint Probe"
+  short_description: "Probe relay APIs and local onboarding paths."
+  default_prompt: "Use $relay-endpoint-probe to verify whether this relay really supports OpenAI chat, OpenAI responses/Codex, or Anthropic messages, and summarize whether it is safe to add into local CCH/check-cx."
