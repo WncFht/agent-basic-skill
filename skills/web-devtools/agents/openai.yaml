@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web DevTools"
+  short_description: "Browser automation, screenshots, and web app debugging"
+  default_prompt: "Use $web-devtools to inspect this web app with browser automation, screenshots, session controls, and scripted interactions."

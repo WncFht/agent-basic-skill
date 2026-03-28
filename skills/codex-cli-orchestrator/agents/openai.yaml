@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codex CLI Orchestrator"
+  short_description: "Launch and monitor one or many codex exec workers"
+  default_prompt: "Use $codex-cli-orchestrator to run one or more codex exec workers with file-backed logs, status summaries, and batch result collection."
+
+policy:
+  allow_implicit_invocation: true

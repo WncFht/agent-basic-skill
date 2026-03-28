@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tauri DevTools"
+  short_description: "Tauri UI, IPC, and window debugging workflows"
+  default_prompt: "Use $tauri-devtools to debug this Tauri app with screenshots, DOM inspection, IPC monitoring, logs, and UI automation."

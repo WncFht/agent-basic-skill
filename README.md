@@ -78,9 +78,21 @@ Notebook 创建、模板化与脚手架生成。
 
 探测 LLM 中转接口、识别 OpenAI/Codex/Anthropic 兼容性，并衔接本机 CCH/check-cx 接入。
 
+### [codex-cli-orchestrator](skills/codex-cli-orchestrator/SKILL.md)
+
+把 `codex exec` 当成可批量编排的 worker，落盘事件、状态与结果。
+
 ### [frontend-slides](skills/frontend-slides/SKILL.md)
 
 HTML 幻灯片与 PPT 转网页。
+
+### [tauri-devtools](skills/tauri-devtools/SKILL.md)
+
+Tauri 应用调试、截图、DOM 检查、IPC 监控与窗口管理。
+
+### [web-devtools](skills/web-devtools/SKILL.md)
+
+基于 browser-use CLI 的浏览器自动化、截图、交互与云端浏览器调试。
 
 ### [bilinote-video-note](skills/bilinote-video-note/SKILL.md)
 
@@ -148,7 +160,10 @@ agent-basic-skill/
 │   ├── deepresearch-skill/
 │   ├── public-ai-resource-research/
 │   ├── relay-endpoint-probe/
+│   ├── codex-cli-orchestrator/
 │   ├── frontend-slides/
+│   ├── tauri-devtools/
+│   ├── web-devtools/
 │   ├── bilinote-video-note/
 │   ├── paperflow-pipeline-notes/
 │   ├── shuiyuan-cache-skill/
