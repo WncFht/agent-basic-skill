@@ -86,6 +86,10 @@ Notebook 创建、模板化与脚手架生成。
 
 HTML 幻灯片与 PPT 转网页。
 
+### [slidev](skills/slidev/SKILL.md)
+
+Slidev 技术演示文稿编写、布局、动画与导出参考。
+
 ### [tauri-devtools](skills/tauri-devtools/SKILL.md)
 
 Tauri 应用调试、截图、DOM 检查、IPC 监控与窗口管理。
@@ -162,6 +166,7 @@ agent-basic-skill/
 │   ├── relay-endpoint-probe/
 │   ├── codex-cli-orchestrator/
 │   ├── frontend-slides/
+│   ├── slidev/
 │   ├── tauri-devtools/
 │   ├── web-devtools/
 │   ├── bilinote-video-note/
