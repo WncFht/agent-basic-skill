@@ -81,6 +81,7 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 - `deepresearch-skill` 依赖 LaTeX 模板、agent 元数据和多模态取证参考文档
 - `report-download` 依赖 Python 脚本和 `pyproject.toml`
 - `frontend-slides` 依赖 companion markdown、CSS 和脚本
+- `frontend-style-mimic` 依赖 style pack 模板、参考文档和管理脚本
 - 几个 wrapper skill 依赖路径解析脚本、参考文档和 `external-repos.json`
 
 `video-note-render-pdf-v0`、`video-note-render-pdf-v1` 和 `video-note-render-pdf-v2` 都还需要一个独立的 runtime repo 和一个本地 case workspace；安装器只负责准备或检查 runtime repo，不会在 skill 目录里创建案例工作区。

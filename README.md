@@ -86,6 +86,14 @@ Notebook 创建、模板化与脚手架生成。
 
 HTML 幻灯片与 PPT 转网页。
 
+### [frontend-style-mimic](skills/frontend-style-mimic/SKILL.md)
+
+从现有前端代码库提取可复用风格包，并支持按风格实现、评审和派生变体。
+
+### [slidev](skills/slidev/SKILL.md)
+
+端到端 Slidev 演示文稿 workflow，覆盖调研、结构规划、演讲稿、SVG 资产和 HTML/PDF/PPTX 导出。
+
 ### [tauri-devtools](skills/tauri-devtools/SKILL.md)
 
 Tauri 应用调试、截图、DOM 检查、IPC 监控与窗口管理。
@@ -162,6 +170,8 @@ agent-basic-skill/
 │   ├── relay-endpoint-probe/
 │   ├── codex-cli-orchestrator/
 │   ├── frontend-slides/
+│   ├── frontend-style-mimic/
+│   ├── slidev/
 │   ├── tauri-devtools/
 │   ├── web-devtools/
 │   ├── bilinote-video-note/

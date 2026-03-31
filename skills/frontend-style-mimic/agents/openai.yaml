@@ -1,0 +1,5 @@
+interface:
+  display_name: "Frontend Style Mimic"
+  short_description: "Extract and reuse frontend styles"
+  default_prompt: "Extract a reusable frontend style pack from this frontend codebase, then use that pack to guide later implementation."
+
