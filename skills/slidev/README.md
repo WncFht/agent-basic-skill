@@ -1,69 +1,48 @@
 # Slidev Skill for Codex
 
-Agent skill that helps Codex understand and work with [Slidev](https://sli.dev) presentations.
+Agent skill that turns Slidev into an end-to-end presentation workflow rather than only a syntax reference.
 
-## Installation
+## What This Skill Covers
 
-Install from this repo with the standard installer:
+- Topic or brief -> researched deck
+- Speech or manuscript -> deck with presenter notes
+- Report or long document -> analyzed deck
+- Card-grid / data-heavy business slides
+- Optional SVG hero or diagram assets
+- Export to built HTML, PDF, PPTX, PNG, or Markdown
 
-```bash
-python scripts/install_skill.py slidev
+## Workflow Summary
+
+The skill now treats Slidev as the canonical deck source and recommends this pipeline:
+
+1. Intake
+2. Research or source analysis
+3. Outline
+4. Page plan
+5. Speaker notes or talk track
+6. Asset generation
+7. Slidev rendering
+8. Verification and export
+
+## Key Files
+
+- `SKILL.md`
+  - Main routing and workflow instructions
+- `references/`
+  - Technical Slidev references plus workflow-specific docs for outline, page planning, speaker notes, SVG, and quality checks
+- `scripts/init-slidev-workspace.sh`
+  - Initializes a stable deck workspace with `slides.md`, `data/`, `notes/`, and `public/svg/`
+- `agents/openai.yaml`
+  - UI metadata for the skill
+
+## Typical Use
+
+```text
+Use $slidev to research, outline, write, render, and export a complete presentation from this topic, document, or speech draft.
 ```
 
-If you want to install directly from GitHub into `~/.codex/skills`, use:
+## Notes
 
-```bash
-python "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
-  --repo antfu/skills \
-  --path skills/slidev
-```
-
-## What's Included
-
-The Slidev skill provides Codex with knowledge about:
-
-- **Core Syntax** - Markdown syntax, slide separators, frontmatter
-- **Animations** - Click animations, transitions, motion effects
-- **Code Features** - Line highlighting, Monaco editor, code groups, magic-move
-- **Diagrams** - Mermaid, PlantUML, LaTeX math
-- **Layouts** - Built-in layouts, slots, global layers
-- **Presenter Mode** - Recording, timer, remote access
-- **Exporting** - PDF, PPTX, PNG, SPA hosting
-
-## Usage
-
-Once installed, Codex can use Slidev knowledge when:
-
-- Creating new presentations
-- Adding slides with code examples
-- Setting up animations and transitions
-- Configuring themes and layouts
-- Exporting presentations
-
-### Example Prompts
-
-```
-Create a Slidev presentation about TypeScript generics with code examples
-```
-
-```
-Add a two-column slide with code on the left and explanation on the right
-```
-
-```
-Set up click animations to reveal bullet points one by one
-```
-
-```
-Configure the presentation for PDF export with speaker notes
-```
-
-## Documentation
-
-- [Slidev Documentation](https://sli.dev)
-- [Theme Gallery](https://sli.dev/resources/theme-gallery)
-- [Showcases](https://sli.dev/resources/showcases)
-
-## License
-
-MIT
+- Slidev remains the canonical deck format.
+- SVG is treated as an optional asset layer, not the primary deck source.
+- For factual or time-sensitive slides, preserve sources before writing claims.

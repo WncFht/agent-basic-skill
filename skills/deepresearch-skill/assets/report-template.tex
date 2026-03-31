@@ -1,7 +1,7 @@
 \documentclass[a4paper]{article}
 
 % Basic packages
-\usepackage[fontset=fandol]{ctex}
+\usepackage[fontset=none]{ctex}
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
 \usepackage[margin=2.4cm]{geometry}
@@ -22,6 +22,39 @@
     \usepackage{pgfplots}
     \pgfplotsset{compat=1.18}
 }{}
+
+% Prefer LXGW fonts when available; fall back to TeX Live defaults otherwise.
+\IfFontExistsTF{LXGW WenKai}{
+    \setmainfont{LXGW WenKai}
+    \setsansfont{LXGW WenKai}
+    \setCJKmainfont{LXGW WenKai}
+    \setCJKsansfont{LXGW WenKai}
+}{
+    \IfFontExistsTF{LXGW WenKai GB Screen}{
+        \setmainfont{LXGW WenKai GB Screen}
+        \setsansfont{LXGW WenKai GB Screen}
+        \setCJKmainfont{LXGW WenKai GB Screen}
+        \setCJKsansfont{LXGW WenKai GB Screen}
+    }{
+        \IfFontExistsTF{霞鹜文楷}{
+            \setmainfont{霞鹜文楷}
+            \setsansfont{霞鹜文楷}
+            \setCJKmainfont{霞鹜文楷}
+            \setCJKsansfont{霞鹜文楷}
+        }{
+            \setmainfont{Liberation Serif}
+            \setsansfont{Liberation Sans}
+            \setCJKmainfont{Noto Sans CJK JP}
+            \setCJKsansfont{Noto Sans CJK JP}
+        }
+    }
+}
+\IfFontExistsTF{LXGW WenKai Mono}{
+    \setmonofont{LXGW WenKai Mono}
+    \setCJKmonofont{LXGW WenKai Mono}
+}{
+    \setmonofont{Noto Sans Mono}
+}
 
 % Hyperlinks
 \hypersetup{
@@ -94,6 +127,8 @@
 % Table helpers
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \setlist[itemize]{leftmargin=1.8em}
+\renewcommand{\arraystretch}{1.18}
+\setlength{\tabcolsep}{6pt}
 
 % Metadata
 \newcommand{\reporttitle}{[在此填写研究主题]}
@@ -188,6 +223,12 @@
 % S2 & Video & 演讲视频 & \url{https://example.com/video} \\
 % \bottomrule
 % \end{longtable}
+%
+% Post-build visual check for every self-drawn figure and every table:
+% - no overflow, clipping, overlap, or caption collisions
+% - no tiny labels or unreadable annotations
+% - column widths and row heights remain comfortable to read
+% - if a figure or table looks cramped, revise the layout and rebuild
 
 %% --- 正文内容结束 --- %%
 
