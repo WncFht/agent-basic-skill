@@ -1,0 +1,7 @@
+interface:
+  display_name: "Slidev Deck Builder"
+  short_description: "Build end-to-end researched presentations with Slidev."
+  default_prompt: "Use $slidev to research, outline, write, render, and export a complete presentation from this topic, document, or speech draft."
+
+policy:
+  allow_implicit_invocation: true

@@ -85,6 +85,7 @@ Prefer fewer claims with stronger support over many weakly supported claims.
 ### 5. Draft the report from the template
 
 Start from `assets/report-template.tex`.
+Prefer the template's default `LXGW`-first font setup for Chinese report text unless the user explicitly asks for another type direction.
 
 Fill the metadata block first, then write the body around evidence. The report should usually contain:
 
@@ -180,6 +181,9 @@ Before delivery:
 - check that hyperlinks render correctly
 - verify that every figure path resolves
 - verify that formulas and tables are legible
+- visually inspect every self-drawn or derived figure in the rendered PDF for overflow, clipping, overlap, tiny labels, caption collisions, and page-fit problems
+- visually inspect every table in the rendered PDF for reasonable column widths, row heights, header wrapping, cell overflow, and overall readability
+- if any figure or table looks cramped, overlapping, clipped, or visually unbalanced, revise the LaTeX and rebuild instead of only noting the issue
 - remove unsupported claims and broken references
 - visually inspect the rendered PDF for spacing, clipping, and caption issues
 
