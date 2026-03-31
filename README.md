@@ -60,7 +60,7 @@ Conventional Commits 工作流。
 
 ### [jujutsu](skills/jujutsu/SKILL.md)
 
-Jujutsu (`jj`) 版本控制工作流与 agent 安全操作约束。
+Jujutsu (`jj`) 版本控制工作流、JJ-first agent 安全约束与按需参考文档。
 
 ### [jupyter-notebook](skills/jupyter-notebook/SKILL.md)
 
@@ -85,6 +85,10 @@ Notebook 创建、模板化与脚手架生成。
 ### [frontend-slides](skills/frontend-slides/SKILL.md)
 
 HTML 幻灯片与 PPT 转网页。
+
+### [slidev](skills/slidev/SKILL.md)
+
+Slidev 技术演示文稿编写、布局、动画与导出参考。
 
 ### [tauri-devtools](skills/tauri-devtools/SKILL.md)
 
@@ -162,6 +166,7 @@ agent-basic-skill/
 │   ├── relay-endpoint-probe/
 │   ├── codex-cli-orchestrator/
 │   ├── frontend-slides/
+│   ├── slidev/
 │   ├── tauri-devtools/
 │   ├── web-devtools/
 │   ├── bilinote-video-note/

@@ -50,9 +50,23 @@ EXPECTED_SKILLS = {
     "git-commit": [
         "SKILL.md",
     ],
+    "slidev": [
+        "SKILL.md",
+        "LICENSE.md",
+        "README.md",
+        "SYNC.md",
+        "references/core-cli.md",
+        "references/build-pdf.md",
+        "references/style-direction.md",
+    ],
     "jujutsu": [
         "SKILL.md",
         "LICENSE.txt",
+        "agents/openai.yaml",
+        "references/advanced.md",
+        "references/commands.md",
+        "references/pitfalls.md",
+        "references/revsets.md",
     ],
     "jupyter-notebook": [
         "SKILL.md",

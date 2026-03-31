@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jujutsu"
+  short_description: "JJ-first VCS workflow for agent-safe repos"
+  default_prompt: "Use $jujutsu to work in this jj-enabled repository with JJ-first, non-interactive workflows, workspace isolation for unrelated changes, and bookmark-safe pushes."
