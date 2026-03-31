@@ -1,13 +1,14 @@
 ---
 name: jujutsu
-description: "**REQUIRED** - Activate first for any VCS work. If `.jj/` exists, treat the repo as JJ-first: prefer `jj workspace` for parallel human/agent tasks, treat Git detached HEAD as normal, and create bookmarks late when pushing or preparing a named branch."
+description: "**REQUIRED** - Activate first for any VCS work in jj-enabled repos. Trigger when `.jj/` exists, repo docs require `jj`, or the user explicitly asks for jj commands. Work JJ-first, prefer dedicated workspaces for parallel tasks, avoid interactive flows, and create bookmarks late."
 allowed-tools: Bash(jj *)
 ---
 
 # Jujutsu (jj) for Agents
 
-This skill teaches the agent how to work in JJ-first repositories without
-falling back to Git habits that create confusion or mix unrelated work.
+Use this skill whenever a repository contains `.jj/`, project docs say to use
+`jj`, or the user explicitly asks for Jujutsu commands. In a jj-enabled repo,
+JJ is the source of truth even if a colocated `.git/` directory also exists.
 
 **Tested with jj v0.39.0.** Command details can change across JJ releases, so
 prefer checking `jj help <command>` if behavior looks unfamiliar.
@@ -33,11 +34,22 @@ When a repository contains `.jj/`, follow these rules first:
 4. **Prefer a separate workspace over a shared working directory.**
    If the current workspace has unrelated changes, appears to belong to another
    human/agent, or the task may run in parallel, create a new `jj workspace`
-   and work there instead of reusing the current directory.
+   and work there instead of reusing it.
 
 5. **Do not panic about detached HEAD in colocated repos.**
    In a repo with both `.jj/` and `.git/`, Git often shows detached HEAD. That
    is normal under JJ and is not something to "fix" with `git checkout`.
+
+6. **Create bookmarks late.**
+   Bookmarks are coordination refs, not the unit of local editing. Prefer
+   pushing by change ID or naming a bookmark only when the user wants to share
+   work or keep a stable branch name.
+
+7. **Escalate into references only when needed.**
+   Keep this main file for route selection and safe defaults. Read
+   `references/commands.md`, `references/revsets.md`,
+   `references/pitfalls.md`, or `references/advanced.md` only for the specific
+   scenario you are handling.
 
 ## Core Concepts
 
@@ -52,7 +64,7 @@ JJ expects you to rewrite and refine commits freely. A clean history comes from
 editing, squashing, absorbing, or rebasing changes instead of piling up fixup
 commits.
 
-### Workspaces Are JJ's Worktree-Style Isolation Tool
+### Workspaces Are JJ's Isolation Tool
 
 `jj workspace` is the standard way to give each human or agent an isolated
 working copy while still sharing one repository history. For parallel tasks,
@@ -72,7 +84,22 @@ For agent work:
 Bookmarks follow rewritten commits, but they do **not** automatically jump to a
 new descendant just because you created one.
 
-## Recommended Agent Workflow
+### Change IDs and Commit IDs Are Different
+
+- **Change ID** identifies the evolving logical change and stays stable across
+  rewrites.
+- **Commit ID** changes whenever the commit is rewritten.
+- When a change diverges, prefer commit IDs or the suffixed change notation
+  shown by `jj log` such as `abcxyz/0`.
+
+### Conflicts and Undo Behave Differently from Git
+
+- JJ records conflicts in commits. They do not force an immediate stop unless
+  your current task demands resolution right away.
+- `jj undo` and `jj op log` are first-class recovery tools. Prefer them over
+  Git reflog-style recovery in JJ repos.
+
+## Recommended Workflow
 
 ### 1. Inspect Before Editing
 
@@ -91,6 +118,8 @@ Interpret the result before editing:
   with `jj new -m "Next task"`.
 - If `@` contains unrelated changes or may belong to someone else, create a new
   workspace instead of mixing work.
+- If JJ reports a stale workspace, run `jj workspace update-stale` before doing
+  anything else.
 
 ### 2. Create a Dedicated Workspace When Needed
 
@@ -143,6 +172,8 @@ Practical rule:
 - `jj describe -m` labels the current `@`
 - `jj new -m` creates a new empty `@` on top
 - `jj commit -m` finalizes the current change and opens a fresh empty `@`
+- `jj commit path/to/file -m` keeps only selected paths in the current commit
+  and moves the remaining changes into the new working-copy commit on top
 
 ### 4. Edit and Refine
 
@@ -157,6 +188,9 @@ jj show @
 Common refinement commands:
 
 ```bash
+# Rewrite only the current change description
+jj describe -m "Refine provider timeout handling"
+
 # Move current changes into the parent commit
 jj squash -m "Refine provider timeout handling"
 
@@ -172,7 +206,7 @@ For agent-safe splitting, prefer non-interactive patterns instead of `jj split`.
 Example:
 
 ```bash
-# Finalize the current subset into a described commit and continue on the rest
+# Keep only the selected files in the current commit, leave the rest for follow-up
 jj commit src/server/provider.ts -m "Fix provider timeout handling"
 ```
 
@@ -190,7 +224,6 @@ jj st
 For ad hoc agent work, prefer pushing by change:
 
 ```bash
-# Push the current change by generating a tracked bookmark name automatically
 jj git push --remote origin --change @
 ```
 
@@ -228,87 +261,39 @@ Interpret carefully:
 In JJ repos, start with bookmarks before assuming Git branch output is the
 right answer.
 
-## Colocated Git Repos
+## Reference Routing
 
-In a colocated repo, JJ and Git share the same underlying history but expose it
-differently.
+Read the matching file only when it helps with the task:
+
+- `references/commands.md`
+  Use for Git-to-JJ intent mapping, quick command lookup, and push/bookmark
+  patterns.
+- `references/revsets.md`
+  Use when writing or reviewing `-r` expressions and commit selection logic.
+- `references/pitfalls.md`
+  Use as a preflight checklist when the repo is confusing, conflicted, or the
+  correct JJ route is unclear.
+- `references/advanced.md`
+  Use for multi-remote setups, divergent changes, operation-log recovery,
+  conflict follow-up, or colocated Git/JJ details.
+
+## Colocated Git Repos
 
 Practical rules:
 
 - Use JJ for normal agent work.
 - Treat Git detached HEAD as expected.
 - Avoid `git add`, `git commit`, `git rebase`, `git stash`, and `git push`
-  unless the user explicitly asks for Git.
+  unless the user explicitly asks to use Git.
 - If a Git-only tool changed refs, run `jj st` or another JJ command so JJ can
   import the updated view.
 
-## Conflicts and Recovery
+## Common Agent Mistakes
 
-### Conflicts
-
-JJ can represent conflicted commits. For agents, do not start an interactive
-conflict resolver.
-
-Instead:
-
-1. inspect `jj st`
-2. edit conflicted files directly
-3. remove conflict markers carefully
-4. run `jj st` again until the conflict is resolved
-
-### Undo
-
-If a JJ operation was wrong:
-
-```bash
-jj undo
-```
-
-To inspect recent repository operations:
-
-```bash
-jj op log
-```
-
-`jj undo` is often the fastest recovery path after an accidental rebase,
-abandon, squash, or bookmark move.
-
-## Quick Reference
-
-| Task | Command |
-| --- | --- |
-| Status | `jj st` |
-| Show workspaces | `jj workspace list` |
-| Add isolated workspace | `jj workspace add ../repo-task --name task -r main -m "Task"` |
-| Refresh stale workspace | `jj workspace update-stale` |
-| Name current change | `jj describe -m "Task"` |
-| Start fresh change | `jj new -m "Task"` |
-| Finalize current change and open next | `jj commit -m "Task"` |
-| Diff | `jj diff` |
-| Show current change | `jj show @` |
-| Restore file | `jj restore path/to/file` |
-| Squash into parent | `jj squash -m "Message"` |
-| Absorb lines into older commits | `jj absorb` |
-| List bookmarks | `jj bookmark list` |
-| List all remote bookmarks | `jj bookmark list --all-remotes` |
-| Create named bookmark | `jj bookmark create name -r @` |
-| Move named bookmark | `jj bookmark move name --to @` |
-| Fetch remote state | `jj git fetch --remote origin` |
-| Push current change with auto bookmark | `jj git push --remote origin --change @` |
-| Push named bookmark | `jj git push --remote origin --bookmark name` |
-| Undo last JJ operation | `jj undo` |
-| Inspect operation history | `jj op log` |
-
-## Default Heuristics for Agents
-
-When you need a fast decision, use these defaults:
-
-1. If `.jj/` exists, stay in JJ unless the user explicitly asks for Git.
-2. If the current workspace is not obviously yours, create a new workspace.
-3. One task should live in one JJ change.
-4. Name the change early, create the bookmark late.
-5. Use `jj git push --change ...` for ad hoc sharing and named bookmarks only
-   when a stable branch name matters.
-6. If JJ says the workspace is stale, update it instead of improvising with
-   Git.
-7. After every mutating command, verify with `jj st`.
+- Treating JJ like Git with a staging area
+- "Fixing" detached HEAD in a colocated repo
+- Reusing a dirty shared workspace instead of creating a new one
+- Creating bookmarks too early and then forgetting they do not auto-advance
+- Running editor-opening or TUI commands in a non-interactive environment
+- Using a revset or rebase mode by guess instead of checking the relevant
+  reference file or `jj help`

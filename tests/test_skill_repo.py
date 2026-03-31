@@ -62,6 +62,11 @@ EXPECTED_SKILLS = {
     "jujutsu": [
         "SKILL.md",
         "LICENSE.txt",
+        "agents/openai.yaml",
+        "references/advanced.md",
+        "references/commands.md",
+        "references/pitfalls.md",
+        "references/revsets.md",
     ],
     "jupyter-notebook": [
         "SKILL.md",

@@ -60,7 +60,7 @@ Conventional Commits 工作流。
 
 ### [jujutsu](skills/jujutsu/SKILL.md)
 
-Jujutsu (`jj`) 版本控制工作流与 agent 安全操作约束。
+Jujutsu (`jj`) 版本控制工作流、JJ-first agent 安全约束与按需参考文档。
 
 ### [jupyter-notebook](skills/jupyter-notebook/SKILL.md)
 
