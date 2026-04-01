@@ -97,6 +97,13 @@ Prefer fewer claims with stronger support over many weakly supported claims.
 
 Start from `assets/report-template.tex`.
 Prefer the template's default `LXGW`-first font setup for Chinese report text unless the user explicitly asks for another type direction.
+Set `\reporttheme` in the metadata block before writing the body.
+The bundled starter themes are `warm-academic`, `nord-frost`, `github-light`, `solarized-light`, `paper-classic`, `ocean-breeze`, `tufte`, `classic-thesis`, `ieee-journal`, `elegant-book`, `chinese-red`, and `ink-wash`.
+Default to the lighter print-safe themes unless the user explicitly wants a stronger visual direction.
+Treat the theme as a layout decision, not only a color decision: the template now changes margins, body size, line spacing, and heading rhythm with the selected theme.
+When the report needs stronger packaging rather than a plain cover, also fill the optional metadata fields such as `\reportversion`, `\reportstatsline`, `\reportstatslineb`, `\reporteditionline`, `\reportfrontispiecepath`, `\reportwatermark`, `\reportbackcoverbannerpath`, `\reportbackcoverdisclaimer`, and `\reportbackcovercopyright`.
+When the report needs a house style rather than a built-in theme, use `\reportthemeoverridepath` or `\reportthemeoverrides` to override palette, layout, typography, or chrome after the base theme is applied.
+Read [references/theme-selection.md](references/theme-selection.md) when you need fast theme selection guidance instead of guessing from theme names alone.
 
 Fill the metadata block first, then write the body around evidence. The report should usually contain:
 
@@ -126,22 +133,30 @@ Fill the metadata block first, then write the body around evidence. The report s
 5. When code or CLI fragments matter:
    wrap them in `lstlisting`
    include a descriptive `caption`
+   if the chosen theme uses a border-style code treatment, do not manually add extra boxes around the listing
 
-6. Add clickable links in two places when appropriate:
+6. For LaTeX tables, default to the template's `ltablex`-backed `tabularx` base.
+   Use fixed-width `L{...}` or `M{...}` columns only for short identifiers, dates, or tags.
+   Use `Y` or `C` columns for long prose cells so width adapts inside `\textwidth`.
+   When a table may span pages, use the repeated-header pattern with `\endfirsthead` and `\endhead` instead of falling back to rigid all-`p{...}` layouts.
+   For source inventories, prefer `L{1.6cm}L{1.8cm}YY` together with the template's `\tablethemeon`, `\tablethemeoff`, and `\sourceledgerheader` helpers.
+   Do not wrap the `ltablex` table in a custom environment; use the helper commands immediately around the raw `tabularx` block.
+
+7. Add clickable links in two places when appropriate:
    inline where the reader benefits immediately
    and in an appendix or source table for auditability
 
-7. Use high-signal callout boxes deliberately:
+8. Use high-signal callout boxes deliberately:
    `findingbox` for the strongest takeaways
    `evidencebox` for source-backed support, methodology, or triangulation notes
    `riskbox` for uncertainty, counterevidence, or failure modes
    `methodbox` for scope assumptions, evaluation setup, or reproducibility notes
 
-8. Keep figures outside callout boxes unless the box is the figure's core explanatory container and layout still remains clean.
+9. Keep figures outside callout boxes unless the box is the figure's core explanatory container and layout still remains clean.
 
-9. Do not emit `[citation needed]`, `[TODO]`, or placeholder links in the final LaTeX.
+10. Do not emit `[citation needed]`, `[TODO]`, or placeholder links in the final LaTeX.
 
-10. End the document with a final top-level section such as `\section{结论与后续问题}`.
+11. End the document with a final top-level section such as `\section{结论与后续问题}`.
     That section should separate:
     - what is well supported
     - what is likely but not fully proven
@@ -183,6 +198,46 @@ Every nontrivial figure, table, or strong claim should remain traceable.
 - When several sources support one conclusion, cite the best primary source first and then the strongest corroborating source.
 
 If a source is weak, outdated, or contradictory, say so instead of smoothing it over.
+
+## Plotting And Figure Quality Rules
+
+When a report includes self-drawn charts, treat figure quality as a first-class deliverable, not a cosmetic afterthought.
+
+### Readability Baseline
+
+- Prefer chart types that match the question. Use bars for category comparisons, lines for trends, scatter or bubble for relationships, and avoid pie or donut charts for dense categories.
+- Keep label density under control. If labels overlap, split into multiple figures or abbreviate labels and move full names into a nearby table.
+- Use explicit value labels only for key points; avoid turning every chart into text clutter.
+- Keep axis names, units, and legend semantics explicit and consistent with table terminology.
+
+### Chinese Font And Locale Safety
+
+- If the report is Chinese, all self-drawn charts must support Chinese text in titles, axes, legends, and annotations.
+- Set a CJK-capable fallback chain in plotting code and verify actual runtime availability before final rendering.
+- Do not assume one specific font exists on every machine. Use ordered fallbacks and fail safe.
+- When a plotting library still renders missing glyph boxes, regenerate with a verified available CJK font before compiling the final PDF.
+
+### Visual Style And Export Defaults
+
+- Prefer calm, high-contrast palettes over flashy gradients. Color should encode meaning first.
+- Keep grid lines subtle and avoid heavy chart junk.
+- Prefer wide layouts for ranking charts so labels remain legible after LaTeX scaling.
+- Export figures at print-safe quality: normally `dpi >= 300`, and ensure enough pixel width for full-page usage.
+- Preserve consistent style across figures in one report: font family, title hierarchy, spacing, and color logic.
+
+### Chart-Specific QA
+
+- For bubble and scatter charts, explicitly check overlap, marker-size scaling, and annotation collisions.
+- For boxplots and violin plots, verify ordering logic and median or quantile labels are readable.
+- For log-scale charts, clearly mark the scale in axis labels and ensure tick labels are interpretable.
+- For category coverage or ranking charts, ensure sorting logic matches the narrative claim in text.
+
+### PDF-Level Visual Validation
+
+- Do not stop at checking raw PNG files. Validate every figure inside the compiled PDF.
+- Check page-level readability on the rendered PDF: tiny text, clipping, overlap, crowded legends, caption collisions, and whitespace balance.
+- If the user says charts are unclear or unattractive, redraw and replace figures instead of only adjusting surrounding prose.
+- Keep plotting scripts or commands reproducible so figures can be regenerated consistently in later revisions.
 
 ## Validation
 
