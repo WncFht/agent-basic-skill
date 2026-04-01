@@ -7,6 +7,14 @@ description: Create an evidence-backed deep research report and final PDF from m
 
 Use this skill to turn a research question plus one or more source modalities into a complete, compileable `.tex` report and a rendered PDF.
 
+Default output root: `/home/fanghaotian/Desktop/src/deepresearch`
+
+Unless the user explicitly asks for another location, create a dedicated report directory under that root using this tree:
+
+`/home/fanghaotian/Desktop/src/deepresearch/YYYY/MM/DD/<topic-slug>-YYYY-MM-DD/`
+
+Keep the final report directory basename in `<topic-slug>-YYYY-MM-DD` form even inside the date tree. Do not flat-dump reports directly under `/home/fanghaotian/Desktop/src/deepresearch/`.
+
 ## Goal
 
 Produce a research deliverable that is:
@@ -42,6 +50,9 @@ Before drafting, resolve:
 - the time horizon or cutoff date
 - whether the user wants explanation, comparison, due diligence, or recommendation
 - whether the final artifact must include `.tex`, PDF, figure assets, appendices, or all of them
+- the output directory; default to `/home/fanghaotian/Desktop/src/deepresearch/YYYY/MM/DD/<topic-slug>-YYYY-MM-DD/` unless the user overrides it
+
+If the user or an upstream tool gives an exact absolute output path, obey that path exactly. If you choose the location yourself, follow the default tree above.
 
 If the scope is underspecified, make the smallest reasonable assumption and state it in the report.
 
@@ -195,6 +206,8 @@ Deliver all artifacts the task calls for. The default bundle is:
 - rendered PDF
 - downloaded or generated figure assets used by the report
 - optional appendix assets such as source tables, OCR output, or subtitle files when they matter to reproducibility
+
+By default, write this bundle under `/home/fanghaotian/Desktop/src/deepresearch/YYYY/MM/DD/<topic-slug>-YYYY-MM-DD/` rather than ad hoc directories elsewhere.
 
 ## Bundled Resources
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Deep Research"
   short_description: "Multimodal research reports with PDF evidence and citations"
-  default_prompt: "Use $deepresearch-skill to turn this question and its sources into an evidence-backed research report with figures, formulas, clickable links, a complete LaTeX file, and a rendered PDF."
+  default_prompt: "Use $deepresearch-skill to turn this question and its sources into an evidence-backed research report with figures, formulas, clickable links, a complete LaTeX file, and a rendered PDF. Unless the user asks otherwise, write the full artifact bundle under /home/fanghaotian/Desktop/src/deepresearch/YYYY/MM/DD/<topic-slug>-YYYY-MM-DD/ and keep the report directory basename in <topic-slug>-YYYY-MM-DD form."
