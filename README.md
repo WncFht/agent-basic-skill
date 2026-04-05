@@ -69,6 +69,7 @@ Notebook 创建、模板化与脚手架生成。
 ### [deepresearch-skill](skills/deepresearch-skill/SKILL.md)
 
 多模态证据驱动的深度研究报告与 LaTeX/PDF 交付。
+介绍、截图和仓库内示例见 [skills/deepresearch-skill/README.md](skills/deepresearch-skill/README.md)。
 
 ### [public-ai-resource-research](skills/public-ai-resource-research/SKILL.md)
 
@@ -183,10 +184,6 @@ agent-basic-skill/
 │   └── video-note-render-pdf-v2/
 └── tests/
 ```
-
-## 迁移说明
-
-旧的 `~/.codex/skills/video-note-skill` 已转为迁移来源，不再作为长期主源维护。当前统一入口保留 `video-note-render-pdf-v0` 基线版、`video-note-render-pdf-v1` 改进版与 `video-note-render-pdf-v2` 结构化增强版；平台差异应继续下沉到外部 runtime repo 的 adapter 层，而不是在 bundle 仓里维护两套平行 skill。
 
 ## 验证
 
