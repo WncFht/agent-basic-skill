@@ -1,6 +1,8 @@
 # Theme Selection
 
-Use this note when a report should look intentional but the user did not specify a theme.
+Use this note when a report should look intentional but the user did not specify a theme, or only gave a loose style preference.
+
+The default behavior is autonomous theme selection: prefer the theme that best matches the topic, report type, evidence density, and packaging needs. Do not interrupt the workflow just to ask the user to choose from the built-in theme list unless theme selection itself is the task.
 
 ## Default Picks
 
@@ -25,6 +27,8 @@ Use this note when a report should look intentional but the user did not specify
 
 ## Practical Rules
 
+- Topic fit comes first, audience fit comes second, and pure color preference comes last.
+- If the user did not specify a theme, choose freely from the built-ins and state the chosen theme in the metadata block without asking for confirmation first.
 - Prefer lighter print-safe themes unless the user explicitly wants a stylized artifact.
 - If the report includes many code blocks, `nord-frost`, `tufte`, and `ieee-journal` work well because the template switches them to a border-led code style.
 - If the report needs stronger packaging, pair the chosen theme with `\reportversion`, `\reportstatsline`, `\reportfrontispiecepath`, and back-cover metadata instead of overloading the body with decorative elements.

@@ -97,6 +97,8 @@ Start from `assets/report-template.tex`.
 Prefer the template's default `LXGW`-first font setup for Chinese report text unless the user explicitly asks for another type direction.
 Set `\reporttheme` in the metadata block before writing the body.
 The bundled starter themes are `warm-academic`, `nord-frost`, `github-light`, `solarized-light`, `paper-classic`, `ocean-breeze`, `tufte`, `classic-thesis`, `ieee-journal`, `elegant-book`, `chinese-red`, and `ink-wash`.
+If the user explicitly specifies a theme or a strong visual direction, follow that instruction.
+If the user does not specify a theme, or only gives a loose preference, choose the theme autonomously based on the topic, report type, evidence density, and packaging needs instead of asking the user to pick from a list.
 Default to the lighter print-safe themes unless the user explicitly wants a stronger visual direction.
 Treat the theme as a layout decision, not only a color decision: the template now changes margins, body size, line spacing, and heading rhythm with the selected theme.
 When the report needs stronger packaging rather than a plain cover, also fill the optional metadata fields such as `\reportversion`, `\reportstatsline`, `\reportstatslineb`, `\reporteditionline`, `\reportfrontispiecepath`, `\reportwatermark`, `\reportbackcoverbannerpath`, `\reportbackcoverdisclaimer`, and `\reportbackcovercopyright`.
