@@ -6,22 +6,31 @@
 \usepackage{graphicx}
 \usepackage[margin=2.4cm]{geometry}
 \usepackage[most]{tcolorbox}
+\usepackage[table]{xcolor}
+\usepackage{scrextend}
 \usepackage{etoolbox}
 \usepackage{listings}
 \usepackage{hyperref}
 \usepackage{xurl}
 \usepackage{booktabs}
-\usepackage{longtable}
-\usepackage{tabularx}
+\usepackage{ltablex}
 \usepackage{array}
+\usepackage{ragged2e}
+\usepackage{adjustbox}
+\usepackage{seqsplit}
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{enumitem}
 \usepackage{tikz}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{eso-pic}
 \IfFileExists{pgfplots.sty}{
     \usepackage{pgfplots}
     \pgfplotsset{compat=1.18}
 }{}
+\usetikzlibrary{calc}
+\keepXColumns
 
 % Prefer LXGW fonts when available; fall back to TeX Live defaults otherwise.
 \IfFontExistsTF{LXGW WenKai}{
@@ -56,20 +65,394 @@
     \setmonofont{Noto Sans Mono}
 }
 
+% Metadata
+% Available themes:
+% warm-academic, nord-frost, github-light, solarized-light, paper-classic,
+% ocean-breeze, tufte, classic-thesis, ieee-journal, elegant-book,
+% chinese-red, ink-wash
+\newcommand{\reporttheme}{warm-academic}
+\newcommand{\reporttitle}{[在此填写研究主题]}
+\newcommand{\reportsubtitle}{[在此填写副标题或研究切口]}
+\newcommand{\reportauthors}{Codex}
+\newcommand{\reportdate}{\today}
+\newcommand{\reportversion}{}
+\newcommand{\reportstatsline}{}
+\newcommand{\reportstatslineb}{}
+\newcommand{\reporteditionline}{}
+\newcommand{\reportthemeoverridepath}{}
+\newcommand{\reportthemeoverrides}{}
+\newcommand{\researchquestion}{[在此填写核心研究问题]}
+\newcommand{\reportscope}{[在此填写研究范围、时间边界或限定条件]}
+\newcommand{\reportaudience}{[在此填写目标读者]}
+\newcommand{\sourcewindow}{[在此填写资料截止日期或证据窗口]}
+\newcommand{\reportcoverpath}{}
+\newcommand{\reportfrontispiecepath}{}
+\newcommand{\reportwatermark}{}
+\newcommand{\reportbackcoverbannerpath}{}
+\newcommand{\reportbackcoverdisclaimer}{}
+\newcommand{\reportbackcovercopyright}{}
+
+% Theme helpers
+\newcommand{\setreportpalette}[7]{%
+    \definecolor{reportcanvas}{HTML}{#1}%
+    \definecolor{reportcanvassec}{HTML}{#2}%
+    \definecolor{reportink}{HTML}{#3}%
+    \definecolor{reportinkfaded}{HTML}{#4}%
+    \definecolor{reportaccent}{HTML}{#5}%
+    \definecolor{reportaccentlight}{HTML}{#6}%
+    \definecolor{reportborder}{HTML}{#7}%
+}
+\newcommand{\setreportlayout}[5]{%
+    \def\reportsectionalign{#1}%
+    \def\reporttitlealign{#2}%
+    \def\reportsectiondecoration{#3}%
+    \def\reportpagedecoration{#4}%
+    \def\reportgeometry{#5}%
+}
+\newcommand{\setreporttypography}[9]{%
+    \def\reportbodyfamilyapply{#1}%
+    \def\reportbodysize{#2}%
+    \def\reportbodyleading{#3}%
+    \def\reportsectionsize{#4}%
+    \def\reportsectionleading{#5}%
+    \def\reportsubsectionsize{#6}%
+    \def\reportsubsectionleading{#7}%
+    \def\reportsubsubsectionsize{#8}%
+    \def\reportsubsubsectionleading{#9}%
+}
+\newcommand{\setreportchrome}[2]{%
+    \def\reportcodestyle{#1}%
+    \def\reportcoverstyle{#2}%
+}
+\newcommand{\setreportbodyfont}[1]{%
+    \ifdefstrequal{#1}{sans}{\def\reportbodyfamilyapply{\sffamily}}{\def\reportbodyfamilyapply{\rmfamily}}%
+}
+\newcommand{\reportsectionfont}{\fontsize{\reportsectionsize}{\reportsectionleading}\selectfont}
+\newcommand{\reportsubsectionfont}{\fontsize{\reportsubsectionsize}{\reportsubsectionleading}\selectfont}
+\newcommand{\reportsubsubsectionfont}{\fontsize{\reportsubsubsectionsize}{\reportsubsubsectionleading}\selectfont}
+\newcommand{\applyreportlayout}{%
+    \expandafter\geometry\expandafter{\reportgeometry}%
+    \AtBeginDocument{%
+        \reportbodyfamilyapply
+        \changefontsizes[\reportbodyleading]{\reportbodysize}%
+        \selectfont
+    }%
+}
+\newcommand{\applyreporttheme}[1]{%
+    \setreportpalette{F9F9F7}{F0EEE6}{181818}{87867F}{CC785C}{D99A82}{E8E6DC}%
+    \setreportlayout{\centering}{\centering}{rules}{top-bar}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+    \setreporttypography{\rmfamily}{10.5pt}{17pt}{26pt}{31pt}{18pt}{22pt}{12pt}{15pt}%
+    \setreportchrome{bg}{centered}%
+    \ifdefstrequal{#1}{nord-frost}{%
+        \setreportpalette{ECEFF4}{E5E9F0}{2E3440}{4C566A}{5E81AC}{81A1C1}{D8DEE9}%
+        \setreportlayout{\raggedright}{\raggedright}{underline}{left-stripe}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+        \setreporttypography{\sffamily}{10pt}{16pt}{24pt}{29pt}{17pt}{21pt}{11pt}{14pt}%
+        \setreportchrome{border}{left-aligned}%
+    }{}%
+    \ifdefstrequal{#1}{github-light}{%
+        \setreportpalette{FFFFFF}{F6F8FA}{1F2328}{656D76}{0969DA}{218BFF}{D0D7DE}%
+        \setreportlayout{\raggedright}{\raggedright}{none}{left-stripe}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+        \setreporttypography{\sffamily}{10pt}{16.5pt}{23pt}{28pt}{16pt}{20pt}{11pt}{14pt}%
+        \setreportchrome{bg}{left-aligned}%
+    }{}%
+    \ifdefstrequal{#1}{solarized-light}{%
+        \setreportpalette{FDF6E3}{EEE8D5}{657B83}{93A1A1}{CB4B16}{DC322F}{EEE8D5}%
+        \setreportlayout{\raggedright}{\raggedright}{underline}{top-band}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+        \setreporttypography{\rmfamily}{10.5pt}{17pt}{24pt}{29pt}{17pt}{21pt}{11pt}{14pt}%
+    }{}%
+    \ifdefstrequal{#1}{paper-classic}{%
+        \setreportpalette{FFFFFF}{FAFAFA}{000000}{666666}{CC0000}{FF3333}{DDDDDD}%
+        \setreportlayout{\raggedright}{\raggedright}{underline}{none}{left=24mm,right=24mm,top=26mm,bottom=24mm}%
+        \setreporttypography{\rmfamily}{10.5pt}{16.8pt}{22pt}{27pt}{16pt}{20pt}{11pt}{14pt}%
+    }{}%
+    \ifdefstrequal{#1}{ocean-breeze}{%
+        \setreportpalette{F0F7F4}{E0EDE8}{1A2E35}{5A7D7C}{2A9D8F}{64CCBF}{C8DDD6}%
+        \setreportlayout{\raggedright}{\centering}{underline}{top-bar}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+        \setreporttypography{\sffamily}{10.5pt}{17pt}{25pt}{30pt}{17pt}{21pt}{11pt}{14pt}%
+        \setreportchrome{bg}{centered}%
+    }{}%
+    \ifdefstrequal{#1}{tufte}{%
+        \setreportpalette{FFFFF8}{F7F7F0}{111111}{999988}{980000}{C04040}{E0DDD0}%
+        \setreportlayout{\raggedright}{\centering}{none}{side-rule}{left=30mm,right=55mm,top=25mm,bottom=25mm}%
+        \setreporttypography{\rmfamily}{11pt}{18pt}{24pt}{29pt}{16pt}{20pt}{11pt}{14pt}%
+        \setreportchrome{border}{minimal}%
+    }{}%
+    \ifdefstrequal{#1}{classic-thesis}{%
+        \setreportpalette{FEFEFE}{F5F2EB}{2B2B2B}{7A7568}{8B4513}{A0522D}{D6CFC2}%
+        \setreportlayout{\centering}{\centering}{rules}{corner-marks}{left=26mm,right=23mm,top=29mm,bottom=26mm}%
+        \setreporttypography{\rmfamily}{10.5pt}{17pt}{28pt}{33pt}{20pt}{24pt}{12pt}{15pt}%
+    }{}%
+    \ifdefstrequal{#1}{ieee-journal}{%
+        \setreportpalette{FFFFFF}{F5F5F5}{000000}{555555}{003366}{336699}{CCCCCC}%
+        \setreportlayout{\raggedright}{\raggedright}{underline}{top-band}{left=20mm,right=20mm,top=22mm,bottom=20mm}%
+        \setreporttypography{\rmfamily}{9.5pt}{14pt}{22pt}{27pt}{14pt}{18pt}{11pt}{14pt}%
+        \setreportchrome{border}{left-aligned}%
+    }{}%
+    \ifdefstrequal{#1}{elegant-book}{%
+        \setreportpalette{FBF9F1}{F0ECE0}{1A1A1A}{6E6B5E}{5B3A29}{7D5642}{DDD8C8}%
+        \setreportlayout{\centering}{\centering}{dot}{double-rule}{left=28mm,right=24mm,top=30mm,bottom=28mm}%
+        \setreporttypography{\rmfamily}{10.5pt}{18pt}{28pt}{33pt}{20pt}{24pt}{12pt}{15pt}%
+    }{}%
+    \ifdefstrequal{#1}{chinese-red}{%
+        \setreportpalette{FFFDF5}{F8F0E0}{1A1009}{8C7A5E}{B22222}{D44040}{E8DCC8}%
+        \setreportlayout{\centering}{\centering}{rules}{top-bar}{left=25mm,right=22mm,top=28mm,bottom=25mm}%
+        \setreporttypography{\rmfamily}{11pt}{18pt}{28pt}{33pt}{20pt}{24pt}{12pt}{15pt}%
+    }{}%
+    \ifdefstrequal{#1}{ink-wash}{%
+        \setreportpalette{F8F6F0}{EEEAE0}{2C2C2C}{8A8A80}{404040}{666660}{D8D4C8}%
+        \setreportlayout{\centering}{\raggedright}{dot}{none}{left=30mm,right=30mm,top=30mm,bottom=28mm}%
+        \setreporttypography{\rmfamily}{10.5pt}{18pt}{24pt}{29pt}{16pt}{20pt}{11pt}{14pt}%
+        \setreportchrome{border}{minimal}%
+    }{}%
+}
+\applyreporttheme{\reporttheme}
+\ifdefempty{\reportthemeoverridepath}{}{\input{\reportthemeoverridepath}}
+\reportthemeoverrides
+\applyreportlayout
+\pagecolor{reportcanvas}
+\color{reportink}
+\setlength{\emergencystretch}{1.6em}
+\Urlmuskip=0mu plus 2mu\relax
+
 % Hyperlinks
 \hypersetup{
     colorlinks=true,
-    linkcolor=blue!50!black,
-    urlcolor=blue!60!black,
-    citecolor=blue!50!black
+    linkcolor=reportaccent,
+    urlcolor=reportaccent,
+    citecolor=reportaccentlight
 }
+
+% Page accents
+\newcommand{\drawreportpagedecoration}{%
+    \begin{tikzpicture}[remember picture, overlay]
+        \ifdefstrequal{\reportpagedecoration}{top-bar}{%
+            \fill[reportaccent!90!reportink] ($(current page.north west)+(0,-7mm)$) rectangle ($(current page.north east)+(0,-2mm)$);
+        }{}%
+        \ifdefstrequal{\reportpagedecoration}{left-stripe}{%
+            \fill[reportaccent!82!reportink] (current page.north west) rectangle ($(current page.south west)+(5mm,0)$);
+        }{}%
+        \ifdefstrequal{\reportpagedecoration}{side-rule}{%
+            \draw[reportaccent!82!reportink, line width=1.1pt] ($(current page.north east)+(-15mm,-18mm)$) -- ($(current page.south east)+(-15mm,18mm)$);
+        }{}%
+        \ifdefstrequal{\reportpagedecoration}{corner-marks}{%
+            \draw[reportaccent!82!reportink, line width=0.9pt] ($(current page.north west)+(8mm,-8mm)$) -- ++(12mm,0);
+            \draw[reportaccent!82!reportink, line width=0.9pt] ($(current page.north west)+(8mm,-8mm)$) -- ++(0,-12mm);
+            \draw[reportaccent!82!reportink, line width=0.9pt] ($(current page.south east)+(-8mm,8mm)$) -- ++(-12mm,0);
+            \draw[reportaccent!82!reportink, line width=0.9pt] ($(current page.south east)+(-8mm,8mm)$) -- ++(0,12mm);
+        }{}%
+        \ifdefstrequal{\reportpagedecoration}{top-band}{%
+            \fill[reportaccent!8!reportcanvas] (current page.north west) rectangle ($(current page.north east)+(0,-13mm)$);
+            \draw[reportaccent!82!reportink, line width=0.8pt] ($(current page.north west)+(0,-13mm)$) -- ($(current page.north east)+(0,-13mm)$);
+        }{}%
+        \ifdefstrequal{\reportpagedecoration}{double-rule}{%
+            \draw[reportaccent!78!reportink, line width=0.6pt] ($(current page.north west)+(20mm,-10mm)$) -- ($(current page.north east)+(-20mm,-10mm)$);
+            \draw[reportaccentlight!82!reportink, line width=0.6pt] ($(current page.north west)+(20mm,-13mm)$) -- ($(current page.north east)+(-20mm,-13mm)$);
+        }{}%
+    \end{tikzpicture}%
+}
+\newcommand{\drawreportwatermark}{%
+    \ifdefempty{\reportwatermark}{}{%
+        \begin{tikzpicture}[remember picture, overlay]
+            \node[
+                rotate=35,
+                scale=7.2,
+                text=reportborder!78!reportink,
+                text opacity=0.11
+            ] at (current page.center) {\reportwatermark};
+        \end{tikzpicture}%
+    }%
+}
+\newcommand{\drawreportbackground}{%
+    \drawreportpagedecoration
+    \drawreportwatermark
+}
+\AddToShipoutPictureBG{\drawreportbackground}
+
+\newcommand{\renderreporttitlebox}[2]{%
+    \begin{adjustbox}{max width=#1}
+        \begin{varwidth}{#1}
+            #2
+        \end{varwidth}
+    \end{adjustbox}%
+}
+\newcommand{\reporttitletext}{\hspace{0pt}\seqsplit{\reporttitle}}
+\newcommand{\reportsubtitletext}{\hspace{0pt}\seqsplit{\reportsubtitle}}
+
+\newcommand{\renderreportcovermeta}[1]{%
+    \ifdefempty{\reportversion}{}{%
+        \vspace{0.45cm}
+        {#1\large\color{reportaccent}\reportversion\par}
+    }%
+    \ifdefempty{\reportstatsline}{}{%
+        \vspace{0.45cm}
+        {#1\small\color{reportinkfaded}\reportstatsline\par}
+    }%
+    \ifdefempty{\reportstatslineb}{}{%
+        {#1\small\color{reportinkfaded}\reportstatslineb\par}
+    }%
+    \vspace{0.9cm}
+    {#1\large \reportauthors\par}
+    \vspace{0.2cm}
+    {#1\large \reportdate\par}
+    \ifdefempty{\reporteditionline}{}{%
+        \vspace{0.2cm}
+        {#1\small\color{reportinkfaded}\reporteditionline\par}
+    }%
+}
+
+\newcommand{\renderreportcoverimage}[1]{%
+    \ifdefempty{\reportcoverpath}{
+        {#1\small\color{reportinkfaded}若有合适的封面图、关键图表、产品截图或示意图，请在生成时填入本地路径。\par}
+    }{
+        {#1\includegraphics[width=0.84\textwidth,height=0.42\textheight,keepaspectratio]{\reportcoverpath}\par}
+    }%
+}
+
+\newcommand{\renderreportcovercentered}{%
+    \reporttitlealign
+    {\Large\bfseries\color{reportaccent}深度研究报告\par}
+    \vspace{0.9cm}
+    \renderreporttitlebox{0.84\textwidth}{\centering\huge\bfseries \reporttitletext\par}
+    \vspace{0.4cm}
+    \renderreporttitlebox{0.74\textwidth}{\centering\Large\color{reportinkfaded}\reportsubtitletext\par}
+    \vspace{0.55cm}
+    {\color{reportaccent}\rule{0.48\linewidth}{1.2pt}\par}
+    \renderreportcovermeta{\centering}
+    \vspace{1.0cm}
+    \renderreportcoverimage{\centering}
+    \vfill
+}
+
+\newcommand{\renderreportcoverleftaligned}{%
+    \begin{tikzpicture}[remember picture, overlay]
+        \fill[reportaccent] (current page.north west) rectangle ($(current page.south west)+(6mm,0)$);
+    \end{tikzpicture}
+    \vspace*{0.12\textheight}
+    \hspace*{14mm}%
+    \begin{minipage}{0.78\textwidth}
+    {\Large\bfseries\color{reportaccent}深度研究报告\par}
+    \vspace{0.8cm}
+    \renderreporttitlebox{\linewidth}{\RaggedRight\huge\bfseries \reporttitletext\par}
+    \vspace{0.4cm}
+    {\color{reportaccent}\rule{0.52\linewidth}{1.6pt}\par}
+    \vspace{0.45cm}
+    \renderreporttitlebox{\linewidth}{\RaggedRight\Large\color{reportinkfaded}\reportsubtitletext\par}
+    \renderreportcovermeta{\RaggedRight}
+    \vspace{0.9cm}
+    \renderreportcoverimage{\RaggedRight}
+    \end{minipage}
+    \vfill
+}
+
+\newcommand{\renderreportcoverminimal}{%
+    \reporttitlealign
+    \vspace*{0.16\textheight}
+    {\Large\color{reportinkfaded}深度研究报告\par}
+    \vspace{1.1cm}
+    \renderreporttitlebox{0.72\textwidth}{\centering\huge\bfseries \reporttitletext\par}
+    \vspace{0.5cm}
+    \renderreporttitlebox{0.66\textwidth}{\centering\large\color{reportinkfaded}\reportsubtitletext\par}
+    \vspace{0.8cm}
+    {\color{reportborder}\rule{0.26\linewidth}{0.5pt}\par}
+    \renderreportcovermeta{\centering}
+    \vspace{0.8cm}
+    \renderreportcoverimage{\centering}
+    \vfill
+}
+
+\newcommand{\renderreportcover}{%
+    \ifdefstrequal{\reportcoverstyle}{left-aligned}{%
+        \renderreportcoverleftaligned
+    }{%
+        \ifdefstrequal{\reportcoverstyle}{minimal}{%
+            \renderreportcoverminimal
+        }{%
+            \renderreportcovercentered
+        }%
+    }%
+}
+
+\newcommand{\renderreportbackcover}{%
+    \clearpage
+    \thispagestyle{empty}
+    \begin{tikzpicture}[remember picture, overlay]
+        \fill[reportaccent] ($(current page.north west)+(0,-3mm)$) rectangle (current page.north east);
+        \fill[reportaccent] (current page.south west) rectangle ($(current page.south east)+(0,3mm)$);
+    \end{tikzpicture}
+    \vspace*{0.18\textheight}
+    \begin{center}
+    \ifdefempty{\reportbackcoverbannerpath}{}{
+        \includegraphics[width=0.76\textwidth,height=0.32\textheight,keepaspectratio]{\reportbackcoverbannerpath}\par
+        \vspace{1.2cm}
+    }
+    \ifdefempty{\reportbackcoverdisclaimer}{}{
+        {\small\color{reportinkfaded}\parbox{0.76\textwidth}{\centering \reportbackcoverdisclaimer}\par}
+        \vspace{0.5cm}
+    }
+    \ifdefempty{\reportbackcovercopyright}{}{
+        {\small\color{reportinkfaded}\reportbackcovercopyright\par}
+    }
+    \end{center}
+}
+
+% Running header / footer
+\setlength{\headheight}{28pt}
+\renewcommand{\sectionmark}[1]{\markboth{#1}{}}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{reportinkfaded}\reporttitle}
+\fancyhead[R]{\footnotesize\color{reportinkfaded}\nouppercase{\leftmark}}
+\fancyfoot[C]{\footnotesize\color{reportaccent}\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{reportborder}\leaders\hrule height \headrulewidth\hfill}}
+\fancypagestyle{plain}{
+    \fancyhf{}
+    \fancyhead[L]{\footnotesize\color{reportinkfaded}\reporttitle}
+    \fancyhead[R]{\footnotesize\color{reportinkfaded}\nouppercase{\leftmark}}
+    \fancyfoot[C]{\footnotesize\color{reportaccent}\thepage}
+    \renewcommand{\headrulewidth}{0.5pt}
+    \renewcommand{\footrulewidth}{0pt}
+}
+\pagestyle{fancy}
+
+% Section styles
+\newcommand{\rendersectiondecoration}{%
+    \ifdefstrequal{\reportsectiondecoration}{rules}{%
+        \par\vspace{0.45ex}{\color{reportborder}\titlerule}
+    }{}%
+    \ifdefstrequal{\reportsectiondecoration}{underline}{%
+        \par\vspace{0.35ex}{\color{reportaccentlight}\titlerule[0.8pt]}
+    }{}%
+    \ifdefstrequal{\reportsectiondecoration}{dot}{%
+        \par\vspace{0.55ex}\centerline{\color{reportaccent}\large$\cdot\ \cdot\ \cdot$}
+    }{}%
+}
+\titleformat{\section}
+    {\reportsectionfont\bfseries\color{reportaccent}\reportsectionalign}
+    {}
+    {0pt}
+    {}
+    [\rendersectiondecoration]
+\titleformat{\subsection}
+    {\reportsubsectionfont\bfseries\color{reportink}\raggedright}
+    {}
+    {0pt}
+    {}
+\titleformat{\subsubsection}
+    {\reportsubsubsectionfont\bfseries\color{reportaccentlight}\raggedright}
+    {}
+    {0pt}
+    {}
+\titlespacing*{\section}{0pt}{2.6ex plus 0.8ex minus 0.2ex}{1.2ex}
+\titlespacing*{\subsection}{0pt}{2.0ex plus 0.6ex minus 0.2ex}{0.8ex}
+\titlespacing*{\subsubsection}{0pt}{1.5ex plus 0.4ex minus 0.2ex}{0.55ex}
 
 % Highlight boxes
 \newtcolorbox{findingbox}[1]{
     enhanced,
-    colback=green!5!white,
-    colframe=green!45!black,
-    colbacktitle=green!45!black,
+    colback=reportaccent!6!reportcanvas,
+    colframe=reportaccent!82!reportink,
+    colbacktitle=reportaccent,
     coltitle=white,
     fonttitle=\bfseries,
     title=#1,
@@ -78,9 +461,9 @@
 
 \newtcolorbox{evidencebox}[1]{
     enhanced,
-    colback=blue!4!white,
-    colframe=blue!65!black,
-    colbacktitle=blue!65!black,
+    colback=reportaccentlight!7!reportcanvas,
+    colframe=reportaccentlight!78!reportink,
+    colbacktitle=reportaccentlight!92!reportink,
     coltitle=white,
     fonttitle=\bfseries,
     title=#1,
@@ -89,9 +472,9 @@
 
 \newtcolorbox{riskbox}[1]{
     enhanced,
-    colback=red!4!white,
-    colframe=red!70!black,
-    colbacktitle=red!70!black,
+    colback=red!4!reportcanvas,
+    colframe=red!68!black,
+    colbacktitle=red!68!black,
     coltitle=white,
     fonttitle=\bfseries,
     title=#1,
@@ -100,76 +483,101 @@
 
 \newtcolorbox{methodbox}[1]{
     enhanced,
-    colback=yellow!9!white,
-    colframe=yellow!60!black,
-    colbacktitle=yellow!60!black,
-    coltitle=black,
+    colback=reportcanvassec,
+    colframe=reportborder!80!reportink,
+    colbacktitle=reportinkfaded,
+    coltitle=white,
     fonttitle=\bfseries,
     title=#1,
     sharp corners
 }
 
 % Listings
-\lstset{
-    language=Python,
-    basicstyle=\ttfamily\small,
-    keywordstyle=\color{blue},
-    stringstyle=\color{red!60!black},
-    commentstyle=\color{green!50!black},
-    breaklines=true,
-    frame=single,
-    numbers=left,
-    numberstyle=\tiny\color{gray},
-    captionpos=b,
-    extendedchars=false
+\newcommand{\applyreportcodestyle}{%
+    \lstset{
+        language=Python,
+        basicstyle=\ttfamily\small\color{reportink},
+        keywordstyle=\bfseries\color{reportaccent},
+        stringstyle=\color{reportaccentlight!85!reportink},
+        commentstyle=\itshape\color{reportinkfaded},
+        backgroundcolor=\color{reportcanvassec},
+        rulecolor=\color{reportborder},
+        breaklines=true,
+        columns=fullflexible,
+        keepspaces=true,
+        showstringspaces=false,
+        frame=single,
+        framerule=0.6pt,
+        xleftmargin=0pt,
+        framexleftmargin=0pt,
+        numbers=left,
+        numberstyle=\tiny\color{reportinkfaded},
+        captionpos=b,
+        extendedchars=false
+    }%
+    \ifdefstrequal{\reportcodestyle}{border}{%
+        \lstset{
+            frame=leftline,
+            framerule=2pt,
+            backgroundcolor=\color{reportcanvas},
+            rulecolor=\color{reportaccent},
+            xleftmargin=1.2em,
+            framexleftmargin=0.8em
+        }%
+    }{}%
 }
 
 % Table helpers
-\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\renewcommand{\tabularxcolumn}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\newcolumntype{C}{>{\Centering\arraybackslash}X}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{M}[1]{>{\RaggedRight\arraybackslash}m{#1}}
 \setlist[itemize]{leftmargin=1.8em}
-\renewcommand{\arraystretch}{1.18}
-\setlength{\tabcolsep}{6pt}
-
-% Metadata
-\newcommand{\reporttitle}{[在此填写研究主题]}
-\newcommand{\reportsubtitle}{[在此填写副标题或研究切口]}
-\newcommand{\reportauthors}{Codex}
-\newcommand{\reportdate}{\today}
-\newcommand{\researchquestion}{[在此填写核心研究问题]}
-\newcommand{\reportscope}{[在此填写研究范围、时间边界或限定条件]}
-\newcommand{\reportaudience}{[在此填写目标读者]}
-\newcommand{\sourcewindow}{[在此填写资料截止日期或证据窗口]}
-\newcommand{\reportcoverpath}{}
+\renewcommand{\arraystretch}{1.22}
+\setlength{\tabcolsep}{5pt}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\setlength{\LTpre}{0.6em}
+\setlength{\LTpost}{0.8em}
+\newcommand{\theadcell}[1]{\textcolor{white}{\textbf{#1}}}
+\newcommand{\tablethemeon}{\small\arrayrulecolor{reportborder}}
+\newcommand{\tablethemeoff}{\arrayrulecolor{black}\normalsize}
+\newcommand{\sourceledgerheader}{%
+    \rowcolor{reportaccent}
+    \theadcell{Source ID} & \theadcell{模态} & \theadcell{标题 / 标签} & \theadcell{链接或路径} \\
+}
+\captionsetup{
+    font=small,
+    labelfont={bf, color=reportaccent},
+    textfont={color=reportinkfaded},
+    skip=6pt
+}
+\applyreportcodestyle
 
 \begin{document}
 
 \begin{titlepage}
-\centering
-{\Large 深度研究报告\par}
-\vspace{1.0cm}
-{\huge\bfseries \reporttitle\par}
-\vspace{0.5cm}
-{\Large \reportsubtitle\par}
-\vspace{0.9cm}
-{\large \reportauthors\par}
-\vspace{0.2cm}
-{\large \reportdate\par}
-\vspace{1.0cm}
-
-\ifdefempty{\reportcoverpath}{
-{\small 若有合适的封面图、关键图表、产品截图或示意图，请在生成时填入本地路径。\par}
-}{
-\includegraphics[width=0.84\textwidth,height=0.42\textheight,keepaspectratio]{\reportcoverpath}\par
-}
-
-\vfill
-\begin{tcolorbox}[width=0.94\textwidth, colback=black!2!white, colframe=black!60, sharp corners]
+\thispagestyle{empty}
+\renderreportcover
+\begin{tcolorbox}[width=\linewidth, colback=reportcanvassec, colframe=reportborder!90!reportink, colbacktitle=reportaccent, coltitle=white, fonttitle=\bfseries, title=研究设定, sharp corners]
 \textbf{核心问题}：\researchquestion\par
 \textbf{研究范围}：\reportscope\par
 \textbf{目标读者}：\reportaudience\par
 \textbf{证据窗口}：\sourcewindow\par
 \end{tcolorbox}
 \end{titlepage}
+
+\ifdefempty{\reportfrontispiecepath}{}{
+\clearpage
+\thispagestyle{empty}
+\vspace*{\fill}
+\begin{center}
+\includegraphics[width=0.9\textwidth,height=0.82\textheight,keepaspectratio]{\reportfrontispiecepath}
+\end{center}
+\vspace*{\fill}
+\clearpage
+}
 
 \tableofcontents
 \newpage
@@ -212,17 +620,44 @@
 % \item $x_i$：第 $i$ 项观测值
 % \end{itemize}
 %
-% Suggested source appendix:
+% Suggested source appendix using the template's auto-fit + auto-break table base:
+% - Keep only short identifiers in fixed-width `L{...}` columns.
+% - Put long prose, notes, and URLs in `Y` columns so width adapts within `\textwidth`.
+%
 % \appendix
 % \section{来源清单}
-% \begin{longtable}{p{2cm}p{2cm}p{4cm}p{5cm}}
+% \tablethemeon
+% \begin{tabularx}{\textwidth}{L{1.6cm}L{1.8cm}YY}
 % \toprule
-% Source ID & 模态 & 标题 / 标签 & 链接或路径 \\
+% \sourceledgerheader
 % \midrule
-% S1 & Web & 官方文档页面 & \url{https://example.com} \\
-% S2 & Video & 演讲视频 & \url{https://example.com/video} \\
+% \endfirsthead
+% \toprule
+% \sourceledgerheader
+% \midrule
+% \endhead
+% S1 & Web & 官方文档页面，作为主要一手来源。 & \url{https://example.com} \\
+% S2 & Video & 访谈视频，记录了关键说法与时间点。 & \url{https://example.com/video} \\
 % \bottomrule
-% \end{longtable}
+% \end{tabularx}
+% \tablethemeoff
+%
+% Suggested one-page comparison table:
+% \begin{table}[H]
+% \centering
+% \tablethemeon
+% \begin{tabularx}{\textwidth}{L{2.6cm}YY}
+% \toprule
+% \rowcolor{reportaccent}
+% \theadcell{方案} & \theadcell{优点} & \theadcell{限制} \\
+% \midrule
+% 方案 A & 适合放长文本，且宽度会自动分配。 & 仍需为短标签列保留固定宽度。 \\
+% 方案 B & 多页时依旧能重复表头。 & 不要把整张表都写成硬编码 `p{...}` 列。 \\
+% \bottomrule
+% \end{tabularx}
+% \tablethemeoff
+% \caption{对比示例}
+% \end{table}
 %
 % Post-build visual check for every self-drawn figure and every table:
 % - no overflow, clipping, overlap, or caption collisions
@@ -231,5 +666,17 @@
 % - if a figure or table looks cramped, revise the layout and rebuild
 
 %% --- 正文内容结束 --- %%
+
+\ifdefempty{\reportbackcoverbannerpath}{
+    \ifdefempty{\reportbackcoverdisclaimer}{
+        \ifdefempty{\reportbackcovercopyright}{}{
+            \renderreportbackcover
+        }
+    }{
+        \renderreportbackcover
+    }
+}{
+    \renderreportbackcover
+}
 
 \end{document}

@@ -9,6 +9,7 @@ tmp/
 openspec/
 local/source-overrides.json
 local/source-overrides.*.json
+temp/
 
 # Generated report artifacts
 reports/**/pdf_preview/
