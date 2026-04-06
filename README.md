@@ -1,6 +1,6 @@
 # agent-basic-skill
 
-`agent-basic-skill` 是一个可复用的 Codex skills 仓库。每个 skill 都直接存放在 `skills/<skill-name>/` 下，整个目录就是安装、同步和覆盖更新的最小单位。
+`agent-basic-skill` 是一个可复用的 Codex skills 与 local agents 仓库。每个 skill 都直接存放在 `skills/<skill-name>/` 下，整个目录就是安装、同步和覆盖更新的最小单位；可复用的本地 agent 配置则放在 `agents/*.toml`。
 
 如果你要让外部 AGENT 通过一句固定指令完成安装，使用面向 agent 的入口文档：[`.codex/INSTALL.md`](.codex/INSTALL.md)。
 
@@ -40,11 +40,22 @@ mkdir -p "$HOME/.codex/skills"
 rsync -a --delete skills/ "$HOME/.codex/skills/"
 ```
 
+同步本仓附带的 local agents：
+
+```bash
+mkdir -p "$HOME/.codex/agents"
+rsync -a agents/ "$HOME/.codex/agents/"
+```
+
 如果未来从 GitHub 安装，请始终安装整个 `skills/<skill-name>/` 目录，而不是只拷贝一个 `SKILL.md`，因为有些 skill 还依赖相邻脚本、模板、资源或参考文档。对于 external wrapper，还需要同时准备它声明的外部源仓。
 
 更多示例见 [INSTALL.md](INSTALL.md)。
 
 ## 技能列表
+
+### [BetterGPT](skills/BetterGPT/SKILL.md)
+
+工作区主入口 skill。默认先路由到 `BetterLanguage`，再按任务命中叠加 `BetterFrontend`、`BetterVibe`、`BetterTrellis` 与 `BetterSubagents`。
 
 ### [pdf](skills/pdf/SKILL.md)
 
@@ -130,6 +141,23 @@ Tauri 应用调试、截图、DOM 检查、IPC 监控与窗口管理。
 
 在 v1 基础上增加字幕字数 guardrail、三轴路由、视觉义务 ledger 与 revision action contract 的新版 wrapper。
 
+## Local Agents
+
+仓库同时附带一组可复用的本地 agent 配置，位于 `agents/`：
+
+- `code-mapper`
+- `docs-researcher`
+- `browser-debugger`
+- `reviewer`
+- `search-specialist`
+- `frontend-developer`
+- `refactoring-specialist`
+- `worker`
+- `explorer`
+- `shell-script-expert`
+
+它们不是 native skill bundle 的一部分；如果要在当前机器的 Codex 中启用，需额外同步到 `~/.codex/agents/`。
+
 ## Thin Wrapper 说明
 
 仓库里的 wrapper skill 只保留入口文档和少量桥接脚本，真正的运行时代码仍在外部工具仓里。约束见 [docs/thin-wrapper-skills.md](docs/thin-wrapper-skills.md)。
@@ -159,7 +187,19 @@ agent-basic-skill/
 │   └── source-overrides.example.json
 ├── scripts/
 │   └── install_skill.py
+├── agents/
+│   ├── code-mapper.toml
+│   ├── docs-researcher.toml
+│   ├── browser-debugger.toml
+│   ├── reviewer.toml
+│   ├── search-specialist.toml
+│   ├── frontend-developer.toml
+│   ├── refactoring-specialist.toml
+│   ├── worker.toml
+│   ├── explorer.toml
+│   └── shell-script-expert.toml
 ├── skills/
+│   ├── BetterGPT/
 │   ├── pdf/
 │   ├── report-download/
 │   ├── git-commit/

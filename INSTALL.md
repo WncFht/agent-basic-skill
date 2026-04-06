@@ -7,7 +7,7 @@
 安装单个 skill：
 
 ```bash
-python scripts/install_skill.py deepresearch-skill
+python scripts/install_skill.py BetterGPT
 ```
 
 安装带外部工具仓的 wrapper：
@@ -24,13 +24,20 @@ python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-no
 - 仓缺失时自动 clone 到 `default_clone_dir`
 - `~/.codex/skills/<skill-name>/` 已存在时，视为受管安装副本并整体替换
 
+如果你也要同步本仓附带的 local agents，再执行：
+
+```bash
+mkdir -p "$HOME/.codex/agents"
+rsync -a agents/ "$HOME/.codex/agents/"
+```
+
 ## 仍可手动覆盖安装
 
 如果你明确知道外部仓已经准备好，也可以继续手动覆盖：
 
 ```bash
-mkdir -p "$HOME/.codex/skills/deepresearch-skill"
-rsync -a --delete skills/deepresearch-skill/ "$HOME/.codex/skills/deepresearch-skill/"
+mkdir -p "$HOME/.codex/skills/BetterGPT"
+rsync -a --delete skills/BetterGPT/ "$HOME/.codex/skills/BetterGPT/"
 ```
 
 刷新全部 skills：
@@ -38,6 +45,13 @@ rsync -a --delete skills/deepresearch-skill/ "$HOME/.codex/skills/deepresearch-s
 ```bash
 mkdir -p "$HOME/.codex/skills"
 rsync -a --delete skills/ "$HOME/.codex/skills/"
+```
+
+同步全部 local agents：
+
+```bash
+mkdir -p "$HOME/.codex/agents"
+rsync -a agents/ "$HOME/.codex/agents/"
 ```
 
 `rsync -a --delete` 的含义是：
@@ -88,6 +102,8 @@ export AGENT_BASIC_SKILL_SOURCE_OVERRIDES="$HOME/.codex/state/agent-basic-skill/
 
 所以安装时应始终复制整个 `skills/<skill-name>/` 目录。
 
+`agents/*.toml` 不走 skill 安装器；它们应作为独立的本地 agent 配置直接同步到 `~/.codex/agents/`。
+
 ## GitHub 安装方式
 
 如果这个仓库发布到 GitHub，推荐继续按“整个 skill 目录”安装，而不是只取一个原始文件。
@@ -103,7 +119,9 @@ export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 ```bash
 python "$CODEX_HOME/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
   --repo <owner>/agent-basic-skill \
-  --path skills/jupyter-notebook
+  --path skills/BetterGPT
 ```
 
 安装多个 skill 时，把多个 `--path skills/<skill-name>` 依次传入即可。
+
+如果仓库中的 local agents 也要一并启用，还需额外把 `agents/` 同步到 `$CODEX_HOME/agents/`。

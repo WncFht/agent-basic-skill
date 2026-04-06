@@ -28,6 +28,17 @@ Enable this skill bundle in Codex via native skill discovery. Clone the repo and
 
 3. **Restart Codex** (quit and relaunch the CLI) so it discovers the bundle.
 
+4. **Optional: sync bundled local agents into Codex:**
+   ```bash
+   mkdir -p ~/.codex/agents
+   rsync -a ~/.codex/agent-basic-skill/agents/ ~/.codex/agents/
+   ```
+
+   This repo ships reusable local agent profiles such as `code-mapper`,
+   `docs-researcher`, `browser-debugger`, `reviewer`, `search-specialist`,
+   `frontend-developer`, `refactoring-specialist`, `explorer`, `worker`, and
+   `shell-script-expert`.
+
 ## Thin Wrapper Prerequisites
 
 Native skill discovery exposes the skill docs immediately, but wrapper skills still need their external runtime repos or local workspaces before first real use.
@@ -60,6 +71,7 @@ If you want managed copies under `~/.codex/skills` instead of, or in addition to
 
 ```bash
 cd ~/.codex/agent-basic-skill
+python scripts/install_skill.py BetterGPT
 python scripts/install_skill.py deepresearch-skill
 python scripts/install_skill.py bilibili-up-digest shuiyuan-cache-skill video-note-render-pdf-v0 video-note-render-pdf-v1 video-note-render-pdf-v2
 ```
@@ -84,10 +96,23 @@ ls -la ~/.agents/skills/agent-basic-skill
 
 You should see a symlink or junction pointing to `~/.codex/agent-basic-skill/skills`.
 
+Check that the main entry skill exists:
+
+```bash
+test -f ~/.agents/skills/agent-basic-skill/BetterGPT/SKILL.md && echo OK
+```
+
+If you synced local agents, verify one of them too:
+
+```bash
+test -f ~/.codex/agents/code-mapper.toml && echo OK
+```
+
 For wrapper skills, verify the resolver after preparing the runtime:
 
 ```bash
 python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v1/scripts/resolve_video_note_paths.py --json
+```
 
 如果你想验证基线版，也可以运行：
 
@@ -99,7 +124,6 @@ python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v0/scripts/resol
 
 ```bash
 python ~/.agents/skills/agent-basic-skill/video-note-render-pdf-v2/scripts/resolve_video_note_paths.py --json
-```
 ```
 
 ## Updating
