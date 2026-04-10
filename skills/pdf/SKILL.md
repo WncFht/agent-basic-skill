@@ -13,7 +13,7 @@ description: "Use when tasks involve reading, creating, or reviewing PDF files w
 - Validate final rendering before delivery.
 
 ## Preferred parser order
-1. Prefer MinerU API for parsing and structured extraction whenever `MINERU_API_TOKEN` is available.
+1. Prefer MinerU API for parsing and structured extraction whenever `MINERU_API_TOKEN` or `MINERU_API_KEY` is available.
    - Public URL input: `POST https://mineru.net/api/v4/extract/task`
    - Local file input: `POST https://mineru.net/api/v4/file-urls/batch`, then upload with `PUT`; MinerU auto-submits the parse task after upload, then poll `GET https://mineru.net/api/v4/extract-results/batch/{batch_id}`
 2. Fall back to `pdfplumber` or `pypdf` only when MinerU cannot be used or when a lightweight local check is enough.
@@ -41,6 +41,10 @@ description: "Use when tasks involve reading, creating, or reviewing PDF files w
 7. After each meaningful update, re-render pages and verify alignment, spacing, and legibility.
 
 ## MinerU quick reference
+- Before calling MinerU in a raw shell, normalize the auth env once:
+```
+export MINERU_API_TOKEN="${MINERU_API_TOKEN:-${MINERU_API_KEY:-}}"
+```
 - Auth header: `Authorization: Bearer $MINERU_API_TOKEN`
 - Single public file parse:
 ```
@@ -111,9 +115,10 @@ sudo apt-get install -y poppler-utils
 If installation isn't possible in this environment, tell the user which dependency is missing and how to install it locally.
 
 ## Environment
-- Set `MINERU_API_TOKEN` before using MinerU.
-- On this machine, if `MINERU_API_TOKEN` is missing in the current shell, first check local shell-managed secrets such as `~/.config/fish/fish_variables` and export the existing value into the active shell.
-- Prefer reusing a machine-local token source over copying a literal token into this skill or any checked-in file.
+- In this setup, the shared secret source of truth is `MINERU_API_KEY` in `~/.config/secrets/shared.env`.
+- Shell loaders should mirror `MINERU_API_KEY` to `MINERU_API_TOKEN` automatically; if they did not run in the current shell, normalize manually with `export MINERU_API_TOKEN="${MINERU_API_TOKEN:-${MINERU_API_KEY:-}}"`.
+- If both env vars are missing, stop and surface that MinerU is unavailable in the current shell instead of silently falling back to stale local notes.
+- Prefer reusing shell-managed secret sources such as `shared.env`, `local.env`, or an already-exported session variable over copying a literal token into this skill or any checked-in file.
 - Never hardcode MinerU tokens into repo files, checked-in configs, or chat responses.
 
 ## Rendering command
