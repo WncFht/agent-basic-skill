@@ -29,3 +29,4 @@ reports/**/source-ledger.md
 reports/**/source-module-test-map.txt
 reports/*-deepresearch/artifacts/
 reports/*-deepresearch/case/
+.ace-tool/
