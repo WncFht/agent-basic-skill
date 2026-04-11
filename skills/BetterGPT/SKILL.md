@@ -105,6 +105,10 @@ description: Use as the workspace-level entry skill for this repository when res
 - 需要看完整路由说明时，读 `references\routing.md`
 - 需要看默认加载策略时，读 `references\load-policy.md`
 
+## 参考
+
+- [linux.do 话题：BetterGPT](https://linux.do/t/topic/1855047)
+
 ## Important Boundary
 
 仅靠目录结构，不能天然保证“总是加载”。

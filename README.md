@@ -164,6 +164,12 @@ Tauri 应用调试、截图、DOM 检查、IPC 监控与窗口管理。
 
 依赖仓声明格式与安装边界见 [docs/external-repo-manifests.md](docs/external-repo-manifests.md)。
 
+## 参考
+
+- [LSTM-Kirigaya/jinhui-skills](https://github.com/LSTM-Kirigaya/jinhui-skills)：共享 skills bundle 结构与分发方式参考。
+- [linux.do 话题：BetterGPT](https://linux.do/t/topic/1855047)：`BetterGPT` 路由层与默认入口设计参考。
+- [wdkns/wdkns-skills](https://github.com/wdkns/wdkns-skills)：另一套公开 skills bundle 组织方式参考。
+
 ## 本地 source override
 
 wrapper skill 的外部仓路径支持本地 override。推荐做法：
