@@ -1,57 +1,32 @@
-# Dashboard / Admin / Workbench Rules
+# Dashboard / Admin / Workbench Pages
 
-## Scope
+Use for dashboard, admin, console, workspace, workbench, internal tool, and data-heavy operation pages.
 
-适用于以下页面类型：
+## Goal
 
-- dashboard
-- admin
-- console
-- workspace
-- workbench
-- internal tool
-- data-heavy operation page
+Make the page efficient, stable, and maintainable. It should support repeated work, not perform like a marketing hero.
 
-## Core Goal
+## Prefer
 
-让后台、控制台、工作台看起来像长期可维护的真实产品，而不是营销站首屏、AI 样板后台或为了展示设计能力拼出来的面板墙。
+- Direct sidebar/content or filter/table/list/detail structures.
+- First-screen access to the main operation, state, result, or queue.
+- Charts only for real trend, comparison, or distribution questions.
+- Cards only for meaningful grouping.
+- Functional copy for filters, forms, tables, statuses, and feedback.
+- In-place cleanup for existing dashboard files: improve copy, spacing, borders, and labels before adding new regions.
 
-## Positive Rules
+## Avoid
 
-- 先围绕真实任务路径组织页面，再决定布局
-- 首屏优先展示最重要的操作、状态、列表、过滤、表单或工作结果
-- 信息架构保持直接、稳定、可预期
-- 卡片只在确实需要信息分组时使用
-- 图表只在真实存在趋势、对比、分布需求时使用
-- 页面标题直接表达当前页面职责，不写空泛口号
+- hero sections in admin pages
+- KPI-card rows as the default first response
+- charts, progress rings, or trend arrows without real data purpose
+- command-center or cockpit language for ordinary workflows
+- decorative right rails added only to make the page look busy
+- repeated oversized rounded cards and pills across every surface
+- rewriting a small existing page into a large dashboard template when the user mainly asked to remove demo/placeholder leakage
 
-## Hard No
+## Check
 
-- 不要在后台首页放 hero section
-- 不要默认做 KPI 卡片横排作为第一反应
-- 不要没有真实业务需求就塞图表、环图、进度条、趋势箭头
-- 不要把后台页面写成“控制中心”“作战台”“指挥舱”式自嗨视觉稿
-- 不要用大段文案解释这个后台多么高效、多么清晰、多么强大
-- 不要在侧边栏、面板、表格、统计卡上重复同一种夸张圆角和装饰风格
-- 不要做左右双 rail + 中间内容的“信息很多但没有任务主线”布局
+The user should quickly see what they can do, where to click, and what state needs attention.
 
-## Common Smells
-
-- 顶部一整块大横幅 + slogan + 副文案
-- 首屏 4 个以上统计卡，但没有明确主任务入口
-- 没有真实数据结构却硬塞多种图表
-- 右侧做一个“今日安排 / 最近动态 / 系统状态”装饰栏，只是为了显得页面充实
-- 每个模块都像展示组件，而不像用户真正会用的工作区域
-
-## Default Layout Bias
-
-- 优先正常 sidebar + content，或 filter + table / list / detail 的成熟结构
-- 优先直接暴露任务入口，不先演一段视觉概念
-- 优先让用户一眼看清：我能做什么、我该点哪里、当前状态是什么
-
-## Copy Bias
-
-- 标题写页面目的，不写设计口号
-- 副文案只在能减少理解成本时保留
-- 表格、表单、筛选、状态反馈都用直接、真实、功能性语言
-- 不向用户解释“这个模块展示了什么能力”
+For cleanup of an existing page, compare the final line count with the original. If it exceeds `max(original_lines + 80, original_lines * 2)`, treat that as a redesign and require explicit user intent or a clear explanation.
