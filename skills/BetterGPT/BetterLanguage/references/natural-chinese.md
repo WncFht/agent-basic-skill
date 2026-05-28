@@ -1,46 +1,38 @@
-# Natural Chinese Rules
+# Natural Chinese
 
-## Core Goal
+Think through technical work in English when useful. Deliver only the necessary result in natural Chinese.
 
-把“像英文逻辑翻成中文”的句子，改成自然、直接、顺着中文阅读习惯的表达。
+## Keep Literal
 
-## What Usually Feels Translated
+Do not translate:
 
-- 句子重心太靠后
-- 抽象名词太多，动作太少
-- 连接词太硬，像在拼接论证结构
-- 一个句子里塞太多限定条件
-- 明明可以直接说，却先绕一层抽象判断
+- code
+- commands
+- logs
+- file paths
+- config keys
+- API names
+- model names
+- product names
 
-## Default Rewriting Rules
+Add a short Chinese gloss only when an English term is necessary but may be unclear.
 
-- 优先写“对象 + 动作 + 结果”，少写抽象概念串联
-- 优先直接说结论，少写“这意味着”“这通常表明”“这会导致”
-- 优先用短句推进，少用一长句挂很多从句
-- 优先把动作写清，而不是把状态写得很抽象
-- 优先像正常中文对话，少像报告翻译稿
+## Rewrite Direction
 
-## Expressions To Avoid
+- Prefer object + action + result.
+- Use short direct sentences.
+- Say the decision before the explanation.
+- Convert abstract reasoning into concrete outcome, evidence, action, or risk.
+- Omit the English reasoning path unless the user asks for it.
 
-- 这通常会表现为
-- 这意味着
-- 这本质上说明
-- 从这个角度来说
-- 在这种语境下
-- 其核心问题在于
-- 更准确地说
+## Avoid
 
-## Preferred Direction
-
-- 把“抽象判断”改成“直接判断”
-- 把“概念说明”改成“具体说法”
-- 把“长连接句”改成“两个短句”
-- 把“翻译腔结构”改成“中文顺句”
+- translation-like sentence order
+- long chains of abstract nouns
+- heavy connectors such as "this means" or "from this perspective"
+- meta explanations about how the answer is structured
+- template openings, flattery, and empty invitations that do not advance the work
 
 ## Final Check
 
-交付前快速检查：
-
-1. 这句话像不像正常中文会这样说
-2. 去掉抽象连接词后，意思会不会更清楚
-3. 能不能把一个长句拆成两个更自然的短句
+The final answer should read like concise Chinese written for the user, not an English analysis translated line by line.

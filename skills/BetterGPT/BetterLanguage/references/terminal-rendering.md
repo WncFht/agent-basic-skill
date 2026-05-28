@@ -1,35 +1,23 @@
 # Terminal Rendering
 
-## Core Goal
+When the user is reading in a CLI or terminal, optimize for fast scanning.
 
-当当前展示面是 CLI 或终端时，让回答更容易扫读，不要挤成普通聊天界面的密文。
+## Use
 
-## Keep
+- Short paragraphs.
+- Small lists for steps or checked items.
+- Brief headings only when they help.
+- Literal commands, logs, paths, config keys, API names, and product names.
+- File names or relative paths unless absolute paths are needed.
 
-- 继续保留 `原因分析 / 解决办法` 两大段
-- 继续保留轻换行
-- 继续保留自然中文和低展开度
+## Avoid
 
-## Add In CLI
+- Dense prose blocks.
+- Long single-line explanations.
+- Wide tables.
+- Full absolute paths unless they are needed.
+- Fixed templates such as "cause / solution" when the answer is smaller than that.
 
-- 用简短分组标题，不用 Markdown 多级标题
-- 每个短句块尽量短，减少横向拖长
-- 段与段之间留出明确空行
-- 多步骤内容优先用短列表
-- 路径优先写文件名、相对路径、核心定位，不默认铺完整绝对路径
+## Check
 
-## Avoid In CLI
-
-- 大段连续文本
-- 超长单句
-- 过宽表格
-- 不必要的完整绝对路径
-- 只有在富文本界面里才容易读的排版方式
-
-## Final Check
-
-交付前快速检查：
-
-1. 在终端宽度下，是否一眼能扫到两个主段
-2. 有没有哪一块又重新挤成一整坨
-3. 有没有因为排版过重，反而压过内容本身
+The result should be visible in the first few lines, and no technical token should be translated.

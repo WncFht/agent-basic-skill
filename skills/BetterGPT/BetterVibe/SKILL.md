@@ -1,6 +1,6 @@
 ---
 name: better-vibe
-description: Use when designing, reviewing, or implementing full-stack application structure and engineering boundaries. Especially use when frontend pages are becoming overloaded, presentation code is mixing with backend concerns, backend services are growing into large coupled modules, or the system needs clearer separation between UI, business logic, persistence, and cross-layer responsibilities.
+description: Use for full-stack structure and boundary decisions. Trigger when UI code absorbs business logic, backend services grow coupled, or the system needs clearer separation among presentation, domain logic, persistence, and cross-layer contracts.
 ---
 
 # Better Vibe
@@ -48,9 +48,9 @@ description: Use when designing, reviewing, or implementing full-stack applicati
 
 ## Read References When Needed
 
-- 需要判断前端页面职责和展示层边界时，读 `references\frontend-boundaries.md`
-- 需要判断后端分层、服务边界和副作用隔离时，读 `references\backend-boundaries.md`
-- 需要判断前后端如何解耦、如何分配职责时，读 `references\fullstack-boundaries.md`
+- 需要判断前端页面职责和展示层边界时，读 `references/frontend-boundaries.md`
+- 需要判断后端分层、服务边界和副作用隔离时，读 `references/backend-boundaries.md`
+- 需要判断前后端如何解耦、如何分配职责时，读 `references/fullstack-boundaries.md`
 
 ## Hard Constraints
 

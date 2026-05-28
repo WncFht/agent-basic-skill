@@ -1,43 +1,28 @@
 # Load Policy
 
-## Goal
-
-把“默认加载”和“按需加载”明确分开，避免所有 skill 都高频常驻。
+Keep the default layer small. The entry skill should route work; it should not preload every BetterGPT sub-skill.
 
 ## Default Layer
 
 - `BetterLanguage`
 
-这是当前唯一默认基础层。
+For implementation or configuration work, also apply the entry-level execution discipline in `BetterGPT`: verify local facts, state important assumptions, keep edits small, and run narrow validation. This is not a separate sub-skill.
 
-## On-Demand Layer
+## On-Demand Layers
 
-- `BetterFrontend`
-- `BetterVibe`
-- `BetterTrellis`
-- `BetterSubagents`
+Load these only when the current task needs them:
 
-只有当前任务明确命中对应场景时，才应叠加。
+- `BetterFrontend`: visible UI, product polish, frontend presentation review
+- `BetterVibe`: frontend/backend boundaries, coupling, layering, responsibility splits
+- `BetterTrellis`: Trellis init, workflow, spec/task handling, hooks, Codex integration
+- `BetterSubagents`: actual subagent dispatch, waiting, steering, cleanup, fallback takeover
 
-- 前端展示层任务  
-  → `BetterFrontend`
-- 全栈架构、职责边界、分层治理任务  
-  → `BetterVibe`
-- Trellis 初始化、workflow、spec、task、hooks、Codex 接入任务  
-  → `BetterTrellis`
-- subagent 委派、并行、等待、回收、主代理接管任务  
-  → `BetterSubagents`
+## Control Rules
 
-## Control Principles
+- Put always-on behavior in the entry skill or higher-level instructions, not in a sub-skill that might not trigger.
+- Keep domain detail in the relevant sub-skill or reference file.
+- Make `description` narrow enough to trigger reliably without pulling unrelated work into context.
+- Decide whether a project should enter Trellis at the entry layer; let `BetterTrellis` handle the workflow after entry.
+- Decide whether subagents will actually be used before loading `BetterSubagents`.
 
-- 默认层数量越少越好
-- description 越宽，误触发越多
-- 默认规则放主入口
-- 具体细节放子 skill
-- 需要总是生效的规则，不要只靠子 skill 自己触发
-- “开发任务是否进入 Trellis 工作流”的入口判断，属于主入口规则，不属于子 skill 自治
-- “进入 Trellis 后具体走哪个阶段、用哪个入口”，再交给 `BetterTrellis`
-
-## Practical Meaning
-
-如果你要“BetterGPT 总是加载”，真正可控的方式不是把它放在目录里，而是让上层入口明确先经过它。
+If `BetterGPT` must always be active, wire it through AGENTS or another higher-level entry point. A folder on disk is only discoverable; it is not a guarantee of activation.

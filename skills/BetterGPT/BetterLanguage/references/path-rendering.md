@@ -1,98 +1,49 @@
 # Path Rendering
 
-## Goal
+Use the shortest path that still lets the user identify the file.
 
-让文件、命令、生成产物的展示更短、更自然、更适合对话阅读。
+## Priority
 
-## Default Rule
+1. File name
+2. Project-relative path
+3. Absolute path
 
-默认按这个优先级展示路径：
+Prefer file names or relative paths in ordinary summaries. Use absolute paths only when required by platform rules, explicit user request, ambiguity, multi-workspace context, or precise evidence.
 
-1. 文件名
-2. 项目相对路径
-3. 绝对路径
+## File Names
 
-普通汇报里，优先使用前两种。
-
-## Override Rule
-
-如果当前平台或上层规则明确要求：
-
-- 必须输出绝对路径
-- 必须给出精确文件证据
-- 当前界面会把相对路径变成不可点击或不可定位信息
-
-则以上默认优先级可以被覆盖，直接使用绝对路径。
-
-## When To Use File Name Only
-
-以下场景优先只显示文件名：
-
-- 已生成哪些文件
-- 已修改哪些文件
-- 已发现哪些产物
-- 同一目录下文件名不会歧义
-
-例如：
+Use file names when the directory is obvious and names are unique:
 
 ```text
-已生成：
-- index.md
-- journal-1.md
+Updated:
+- SKILL.md
+- routing.md
 ```
 
-## When To Use Relative Path
+## Relative Paths
 
-以下场景优先显示项目相对路径：
-
-- 需要让用户知道文件位于哪个模块或目录
-- 只写文件名可能歧义
-- 当前任务和目录结构强相关
-
-例如：
+Use relative paths when module location matters or file names are ambiguous:
 
 ```text
-已生成：
-- .trellis/workspace/Administrator/index.md
-- .trellis/workspace/Administrator/journal-1.md
+Updated:
+- BetterLanguage/references/path-rendering.md
+- BetterSubagents/references/agent-registry.md
 ```
 
-## When Absolute Path Is Allowed
+## Commands And Logs
 
-只有以下情况，才显示绝对路径：
+Keep commands, log text, config keys, API names, and product names literal. Do not translate them.
 
-- 用户明确要求完整路径
-- 正在排查路径冲突
-- 需要做精确证据引用
-- 多个工作区或多个同名文件会导致歧义
-- 当前任务本身就是定位磁盘真实位置
-
-## Command Rendering
-
-命令优先原样保留，但不要为了配合命令，额外重复输出一整段绝对路径。
-
-例如：
+Prefer:
 
 ```text
-`python .trellis/scripts/task.py list` 可正常执行，返回 0 task(s)。
+`python .trellis/scripts/task.py list` returned `0 task(s)`.
 ```
 
-## Reporting Style
+Avoid repeating a full absolute path beside a command unless the path itself is the issue.
 
-推荐写法：
+## Final Check
 
-```text
-已生成：
-- index.md
-- journal-1.md
-
-`python .trellis/scripts/task.py list` 可正常执行，返回 0 task(s)。
-```
-
-不要写成：
-
-```text
-已生成
-C:\Users\Administrator\Desktop\Make-GPT-Great-Again\.trellis\workspace\Administrator\index.md
-C:\Users\Administrator\Desktop\Make-GPT-Great-Again\.trellis\workspace\Administrator\journal-1.md
-```
+- Can the user find the file?
+- Did a path become longer than needed?
+- Did any command, key, log, or product name get translated?

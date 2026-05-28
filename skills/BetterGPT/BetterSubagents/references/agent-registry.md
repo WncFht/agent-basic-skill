@@ -1,51 +1,39 @@
 # Agent Registry
 
-当前工作区本地 `agents/` 目录中的主要 subagent：
+Only use `agent_type` values that the current `spawn_agent` tool exposes. Old capability labels are task intents, not callable agent names.
 
-## 调查型
+## Current Callable Types
 
-- `explorer`：通用只读调查兜底
-- `code-mapper`：调用链、执行路径、ownership boundary
-- `search-specialist`：高信号搜索与下一步入口发现
+- `default`: lightweight read-only evidence gathering or summary
+- `explorer`: read-only codebase, config, path, and execution-flow investigation
+- `docs_researcher`: read-only official documentation verification, especially OpenAI / Codex behavior
+- `reviewer`: read-only correctness, regression, security, and missing-test review
+- `worker`: implementation after the main agent has scoped files, boundaries, and success criteria
 
-## 审查 / 核验型
+## Old Label Mapping
 
-- `reviewer`：风险审查、回归、缺测试
-- `docs-researcher`：官方文档、版本、API 语义核验
+- `code-mapper` -> `explorer`
+- `search-specialist` -> `explorer`, or `default` for light non-code prefiltering
+- `frontend-developer` -> `worker` with `BetterFrontend`
+- `refactoring-specialist` -> `worker` with `BetterVibe`
+- `browser-debugger` -> main agent handles browser reproduction; split read-only code/log evidence to `explorer`
 
-## 实现型
+## Framework Label Mapping
 
-- `worker`：通用实现兜底
-- `frontend-developer`：前端实现与 UI 修复
-- `refactoring-specialist`：低风险结构重构
+Framework-provided labels are also intents, not callable names unless the current `spawn_agent` tool exposes them.
 
-## 浏览器取证型
+- `trellis-implement` -> `worker` with `BetterTrellis`; add `BetterFrontend` for UI work
+- `trellis-check` -> `reviewer` with `BetterTrellis`
+- `trellis-research` -> `explorer` for local evidence, or `docs_researcher` for official docs
 
-- `browser-debugger`：浏览器复现、UI 证据收集、客户端调试
+## Selection Rules
 
-## 优先原则
+- Official docs -> `docs_researcher`.
+- Risk review -> `reviewer`.
+- Call-chain or repo mapping -> `explorer`.
+- Small evidence summary -> `default`.
+- Scoped implementation -> `worker`.
 
-1. 有专用 agent 时，优先专用 agent
-2. 没有专用 agent 时，再退回 `explorer` / `worker`
-3. 读型任务优先只读 agent
-4. 写型任务优先实现型 agent
+Respect current runtime limits. If `agents.max_depth = 1`, only the main agent should spawn subagents; child agents should not be asked to spawn more children.
 
-## 优先级链
-
-- 调用链 / ownership / 主路径  
-  → `code-mapper` > `explorer`
-- 官方文档 / 默认值 / API 语义  
-  → `docs-researcher` > `search-specialist`
-- 浏览器复现 / 前端证据  
-  → `browser-debugger` > `frontend-developer`
-- 前端明确实现  
-  → `frontend-developer` > `worker`
-- 结构重构 / 职责拆分  
-  → `refactoring-specialist` > `worker`
-
-## 使用边界
-
-- `explorer`：只读兜底，不负责完整调用链梳理、文档语义核验、浏览器复现和代码实施
-- `worker`：实现兜底，不负责替代前端专项和结构重构专项
-- `search-specialist`：负责找入口，不负责文档事实裁定和完整调用链图谱
-- `browser-debugger`：负责复现和证据，不负责默认接管前端实现
+Do not let a `worker` self-review important changes; use `reviewer` or main-agent verification.

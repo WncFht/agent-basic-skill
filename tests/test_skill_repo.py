@@ -21,7 +21,7 @@ EXPECTED_SKILLS = {
         "BetterFrontend/references/production-defaults.md",
         "BetterFrontend/references/visual-rules.md",
         "BetterLanguage/SKILL.md",
-        "BetterLanguage/references/banned-phrases.md",
+        "BetterLanguage/references/conversation-pragmatics.md",
         "BetterLanguage/references/compression-rules.md",
         "BetterLanguage/references/environment-branch.md",
         "BetterLanguage/references/natural-chinese.md",
