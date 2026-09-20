@@ -1,0 +1,23 @@
+%%
+%% Vendored fallback for TeX distributions that do not ship binhex.tex.
+%%
+\edef\next{\toks0=%
+   {\catcode`\noexpand\@=\the\catcode`\@\toks0{\the\toks0}}%
+}
+\next
+\catcode`\@=11
+\def\hexnumber@#1{%
+  \ifcase\number#1\or 1\or 2\or 3\or 4\or 5\or 6\or 7\or 8\or 9\or
+    A\or B\or C\or D\or E\or F\fi
+}
+\def\two@hex@digits#1{%
+  \hexnumber@{\numexpr#1/16\relax}\hexnumber@{\numexpr#1-16*(#1/16)\relax}%
+}
+\def\four@hex@digits#1{%
+  \two@hex@digits{\numexpr#1/256\relax}%
+  \two@hex@digits{\numexpr#1-256*(#1/256)\relax}%
+}
+\catcode`\@=\the\catcode`\@
+\the\toks0
+\endinput
+

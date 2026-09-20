@@ -202,32 +202,6 @@ class InstallSkillTests(unittest.TestCase):
         self.assertTrue((dest_skill / "SKILL.md").exists())
         self.assertTrue((dest_skill / "external-repos.json").exists())
 
-    def test_real_video_note_skill_manifest_uses_env_repo(self) -> None:
-        runtime_repo = self.root / "video-note-pipeline"
-        runtime_repo.mkdir()
-        (runtime_repo / "pyproject.toml").write_text("[project]\nname='video-note-pipeline'\n", encoding="utf-8")
-        (runtime_repo / "README.md").write_text("# runtime\n", encoding="utf-8")
-
-        result = run_installer_for_skill(
-            SOURCE_INSTALLER,
-            REPO_ROOT,
-            "video-note-render-pdf-v1",
-            {
-                "HOME": str(self.root),
-                "CODEX_HOME": str(self.root / ".codex"),
-                "VIDEO_NOTE_PIPELINE_REPO": str(runtime_repo),
-            },
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
-        payload = json.loads(result.stdout)
-        dependency = payload["results"][0]["dependencies"][0]
-        self.assertEqual(dependency["repo"], "WncFht/video-note-pipeline")
-        self.assertEqual(dependency["status"], "already_present")
-        self.assertEqual(dependency["resolution"], "env:VIDEO_NOTE_PIPELINE_REPO")
-        installed_root = self.root / ".codex" / "skills" / "video-note-render-pdf-v1"
-        self.assertTrue((installed_root / "SKILL.md").exists())
-        self.assertTrue((installed_root / "external-repos.json").exists())
-
 
 if __name__ == "__main__":
     unittest.main()

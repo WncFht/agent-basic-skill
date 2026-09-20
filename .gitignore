@@ -7,26 +7,5 @@ tmp/
 .codex/*
 !.codex/INSTALL.md
 openspec/
-local/source-overrides.json
-local/source-overrides.*.json
 temp/
-
-# Generated report artifacts
-reports/**/pdf_preview/
-reports/**/preview/
-reports/**/preview-*/
-reports/**/*.aux
-reports/**/*.fdb_latexmk
-reports/**/*.fls
-reports/**/*.log
-reports/**/*.out
-reports/**/*.toc
-reports/**/*.xdv
-reports/**/*-git-status.txt
-reports/**/*-pytest.log
-reports/**/*-test-counts.csv
-reports/**/source-ledger.md
-reports/**/source-module-test-map.txt
-reports/*-deepresearch/artifacts/
-reports/*-deepresearch/case/
 .ace-tool/

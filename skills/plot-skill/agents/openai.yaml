@@ -1,0 +1,4 @@
+interface:
+  display_name: "中文 Plot Skill"
+  short_description: "用少量 preset 生成和维护 bar donut line radar scatter 图"
+  default_prompt: "用 tableau-paper preset 画一个柱状图"
