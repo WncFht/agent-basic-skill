@@ -9,3 +9,6 @@ tmp/
 openspec/
 temp/
 .ace-tool/
+
+# MPE preview env (local link farm — scripts/crossnote-links.sh)
+/.crossnote/

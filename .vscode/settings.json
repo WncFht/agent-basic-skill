@@ -1,0 +1,15 @@
+{
+  "markdown-preview-enhanced.enablePreviewScripts": true,
+  "markdown-preview-enhanced.enableScriptExecution": true,
+  "markdown-preview-enhanced.enableWikiLinkSyntax": true,
+  "markdown-preview-enhanced.wikiLinkResolution": "shortest",
+  "markdown-preview-enhanced.enableCriticMarkupSyntax": true,
+  "markdown-preview-enhanced.enableExtendedTableSyntax": true,
+  "markdown-preview-enhanced.enableHTML5Embed": true,
+  "markdown-preview-enhanced.breakOnSingleNewLine": true,
+  "markdown-preview-enhanced.mathRenderingOption": "KaTeX",
+  "markdown-preview-enhanced.previewTheme": "none.css",
+  "markdown-preview-enhanced.previewColorScheme": "systemColorScheme",
+  "markdown-preview-enhanced.mermaidTheme": "dark",
+  "markdown-preview-enhanced.frontMatterRenderingOption": "code block"
+}
