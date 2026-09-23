@@ -1,8 +1,7 @@
 {
   "markdown-preview-enhanced.enablePreviewScripts": true,
   "markdown-preview-enhanced.enableScriptExecution": true,
-  "markdown-preview-enhanced.enableWikiLinkSyntax": true,
-  "markdown-preview-enhanced.wikiLinkResolution": "shortest",
+  "markdown-preview-enhanced.enableWikiLinkSyntax": false,
   "markdown-preview-enhanced.enableCriticMarkupSyntax": true,
   "markdown-preview-enhanced.enableExtendedTableSyntax": true,
   "markdown-preview-enhanced.enableHTML5Embed": true,
