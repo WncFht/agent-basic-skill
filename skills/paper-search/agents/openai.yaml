@@ -1,0 +1,3 @@
+interface:
+  display_name: "paper-search"
+  short_description: "arXiv / DBLP / OpenAlex / OpenReview / Semantic Scholar / Crossref 六源论文检索统一 CLI"

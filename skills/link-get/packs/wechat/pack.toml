@@ -1,0 +1,27 @@
+# wechat pack — mp.weixin.qq.com article fetcher (monolith wrap of wechat-get)
+[pack]
+name = "wechat"
+abi = 1
+ns = "link-get"
+kinds = ["article"]
+desc = "defuddle → tvly-hikari → firecrawl"
+
+[match]
+hosts = ["mp.weixin.qq.com"]
+schemes = ["http", "https"]
+
+[identity]
+keyexpr = "wechat:{url}"          # must match wechat-get's K="wechat:$TARGET"
+
+[[lanes]]
+name = "wechat-get"
+exec = "monolith"
+connector = "../../scripts/connectors/wechat-get"
+needs = { tools = ["curl"], env = [], env_optional = ["FIRECRAWL_API_KEY", "LGC_WAIT"], creds = [] }
+egress = { hosts = ["mp.weixin.qq.com", "r.jina.ai", "*"], proxy = "optional" }
+budget_ms = 120000
+fail_note = false                     # 单车道臂必设：transient 上账会冷却唯一车道成 dep_absent
+
+[monolith]
+argv = ["{url}", "-o", "{artifact_dir}"]
+flag_params = { refresh = "--refresh" }

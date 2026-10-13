@@ -1,0 +1,226 @@
+% vizstyle.tex — shared tokens for figure-viz. \input{vizstyle} after \usepackage{tikz}.
+% Palette is shared with assets/mpl/fvstyle.py;
+% scripts/check_palette.py fails if the two files disagree.
+% 双载守卫：配方宏用 \newcounter/\newcommand（非幂等），frag 里残留
+% \input{vizstyle} 或 preamble 预载后再载一次是 no-op 而非硬报错。
+\ifdefined\vzstyleloaded\expandafter\endinput\fi
+\global\def\vzstyleloaded{1}
+%
+% libraries used by the tokens below — loaded here so a standalone doc that
+% only does \input{vizstyle} still compiles (varr/inh need arrows.meta's
+% Stealth; vcurly needs decorations.pathreplacing; plate 配方用 fit;
+% \selfmsg 用 calc 的 $(...)$ 语法)
+\usetikzlibrary{arrows.meta,decorations.pathreplacing,fit,calc}
+%
+% Hues: muted paper tones. First six carry fixed semantics
+% (teal=primary, orange=secondary, coral=contrast, violet/green=auxiliary);
+% gold/blue/rose extend to 8 distinguishable series for data charts.
+\definecolor{vteal}{HTML}{4F8FA5}
+\definecolor{vorange}{HTML}{EE995B}
+\definecolor{vcoral}{HTML}{C95B5B}
+\definecolor{vviolet}{HTML}{8A74B5}
+\definecolor{vgreen}{HTML}{6FA287}
+\definecolor{vgold}{HTML}{D9A93C}
+\definecolor{vblue}{HTML}{5478A0}
+\definecolor{vrose}{HTML}{B9748F}
+\definecolor{vgray}{HTML}{85898F}
+
+% neutrals: text/line ink and faint grid/fill mist
+\definecolor{vink}{HTML}{3A3F45}
+\definecolor{vmist}{HTML}{D8DBDE}
+
+% background layer for lane/band fills — \begin{pgfonlayer}{bg} works
+% in any doc that inputs this file (and in render_tex.py --frag preamble)
+\pgfdeclarelayer{bg}
+\pgfsetlayers{bg,main}
+
+% font hierarchy: \large formula, \small\bfseries stage labels,
+% \Large operators, \small symbols, \scriptsize shapes, \small meaning text
+\tikzset{
+  vstage/.style={font=\small\bfseries, text=black!65},
+  vsym/.style={font=\small},
+  vshape/.style={font=\scriptsize, text=black!60},
+  vnote/.style={font=\scriptsize, text=black!70},
+  varr/.style={-{Stealth[length=2.4mm]}, line width=0.7pt, draw=black!60},
+  vbrace/.style={draw=black!55, line width=0.5pt},
+  % --- grammar tokens ---------------------------------------------------
+  % color-agnostic containers; hue comes from the call site (颜色即语义)
+  model/.style={rounded corners=4pt, draw=black!55, fill=white,
+                line width=0.9pt, align=center, inner sep=5pt,
+                minimum height=2.4em},                        % flow 阶段块
+  card/.style={rounded corners=2pt, draw=black!55, fill=white,
+               line width=0.7pt, align=center, inner sep=4pt,
+               font=\small},                                  % board 项卡
+  mdot/.style={circle, fill=#1, draw=none, minimum size=0.17cm,
+               inner sep=0pt, outer sep=0pt},                 % timeline 事件点
+  msq/.style={rectangle, fill=#1, draw=none, minimum size=0.17cm,
+              inner sep=0pt, outer sep=0pt},                  % timeline 方点(数据集/基准)
+  lab/.style={fill=white, draw=black!20, rounded corners=2.5pt,
+              font=\scriptsize, inner xsep=4pt, inner ysep=3pt,
+              align=center, text=black!75},                   % timeline 漂移标签
+  lead/.style={draw=gray!55, line width=0.35pt},              % timeline 引线
+  gtag/.style={font=\small\bfseries, text=black!65,
+               align=right, anchor=east},                     % timeline/board 泳道标签
+  inh/.style={-{Stealth[length=2.2mm]}, draw=black!45,
+              line width=0.6pt},                              % timeline 继承箭头
+  % --- 语义件 ------------------------------------------------------------
+  gcell/.style={fill=#1!40, draw=none, rounded corners=1.5pt},
+  gcell/.default=vmist,            % 掩码/被屏蔽弱格(ghost cell); 可换色相 gcell=vteal
+  mean/.style={fill=vgray!7, draw=vgray!35, line width=0.5pt,
+               rounded corners=3pt, inner sep=7pt, align=left,
+               font=\small, text=vink},                       % 底部含义框; 调用点补 text width
+  band/.style={fill=#1!8, rounded corners=4pt},
+  band/.default=vgray,             % 泳道/列带底带: \fill[band] 或 \fill[band=vteal], bg 层
+  vcurly/.style={decorate, decoration={brace, amplitude=4pt, raise=2pt},
+                 draw=black!55, line width=0.5pt},            % 真花括号; vbrace 是直角括号描边
+  % --- 配方族（references/tikz/recipes.md） --------------------------------------
+  % pgm plate：tikz-bayesnet 四件套 + 板角计数标签通道
+  lat/.style={circle, draw=black!60, fill=white, minimum size=0.85cm,
+              inner sep=0pt, font=\small},                    % 潜在变量空心圆
+  obs/.style={lat, fill=vgray!45},                            % 观测变量阴影圆
+  const/.style={font=\small, inner sep=1pt},                  % 超参无边小字
+  plate/.style={draw=black!55, line width=0.7pt},             % 重复采样细框板
+  plab/.style={vnote, inner sep=0pt},                         % 板角计数标签
+  % nn-blockstack：vadd 残差汇合圆（文本写 {$+$}）+ nskip 正交旁路 to path
+  vadd/.style={circle, draw=vink, fill=white, line width=0.7pt,
+               inner sep=0pt, minimum size=0.42cm},
+  % \draw[nskip=<通道x>] (tap) to (add)：西缘四段正交绕行；nskipe 走东缘。
+  % 起止必须是命名节点/coordinate（样式内部取 .west/.east 锚）
+  nskip/.style={varr, rounded corners=5pt,
+    to path={(\tikztostart.west) -- ({#1},0 |- \tikztostart.west)
+             -- ({#1},0 |- \tikztotarget.west) -- (\tikztotarget.west)}},
+  nskipe/.style={varr, rounded corners=5pt,
+    to path={(\tikztostart.east) -- ({#1},0 |- \tikztostart.east)
+             -- ({#1},0 |- \tikztotarget.east) -- (\tikztotarget.east)}},
+  % seq-lifeline：lifeline 虚线 + act=<族色> 激活条 + selfmsg 参数键
+  lifeline/.style={draw=vgray!85, line width=0.6pt,
+                   dash pattern=on 3pt off 2.4pt},
+  act/.style={fill=#1!18, draw=#1!70, line width=0.55pt,
+              minimum width=0.24cm, inner sep=0pt, anchor=north},
+  selfw/.initial=1.2,   % \selfmsg/vselfmsg 折回横向探出（画布单位，负值向左折）
+  selfh/.initial=0.5,   % \selfmsg/vselfmsg 折回下行落差（恒正）
+  % vselfmsg pic：\selfmsg 的 pic 形 ——
+  % \pic at (出口坐标) {vselfmsg={条名}{id}{标签}{附加tags}}。第四参同
+  % \nskipw 第五参惯例：合法穿越对象写 {via=bdg}，无则 {}。
+  % pic 体内 \vzwire 途经点直接写 pic 局部坐标：vizaudit 记录时对每个途经点施加
+  % 当前变换矩阵（含 pic 的 at 平移），审计行落绝对画布坐标。标签节点
+  % 名 <id>l；pic 被命名时内部名字走 name prefix（要取 <id>l 就别给 pic 起名）。
+  pics/vselfmsg/.style n args={4}{code={%
+    \pgfmathsetmacro{\vzw}{\pgfkeysvalueof{/tikz/selfw}}%
+    \pgfmathsetmacro{\vzh}{\pgfkeysvalueof{/tikz/selfh}}%
+    \pgfmathsetmacro{\vzny}{0-\vzh}%
+    \pgfmathsetmacro{\vznx}{0-\vzw}%
+    \draw[varr, pic actions] (0,0) -- ++(\vzw,0) -- ++(0,\vzny) -- ++(\vznx,0);
+    \vzwire{w#2}{(0,0);(\vzw,0);(\vzw,\vzny);(0,\vzny)}{endpoint=#1 #4}%
+    \ifdim\vzw pt>0pt
+      \node[vnote, anchor=west, align=left] (#2l) at ({\vzw+0.15},{0.5*\vzny}) {#3};
+    \else
+      \node[vnote, anchor=east, align=right] (#2l) at ({\vzw-0.15},{0.5*\vzny}) {#3};
+    \fi
+  }},
+  % 搜索树 sn-edge：节点/边双用三态（\node 取边框/底/字色，\draw 取线色/箭头；
+  % 边态经 \snkids 批量连边 + vzwire）
+  snkeep/.style={-{Stealth[length=2.4mm]}, draw=vteal!85, fill=vteal!12,
+                 line width=0.7pt},                           % 存活
+  snghost/.style={draw=vgray!60, fill=vgray!6, dashed, line width=0.6pt,
+                  text=black!55},                             % 剪枝 ghost（无箭头）
+  snret/.style={-{Stealth[length=2.4mm]}, draw=vorange, fill=vorange!18,
+                line width=1.1pt},                            % 返回路径高亮
+  snroot/.style={draw=vink, fill=vink!8},                     % 根
+  % --- 伪 3D 等距立体（solid 语法，references/tikz/solid.md） -----------------
+  % ziso: 2:1 dimetric 基 —— x 轴向右下、y 轴向左下、z 轴直上（视向 (+x,+y,+z)：
+  %   近角 = 底面前角，顶面在最高处）。基向量必须带单位（裸 (0,1) 会被当 pt）。
+  %   全图只许这一个基向与光向：顶 !12 / 左面(受光) !30 / 右面(背光) !50。
+  ziso/.style={x={(1cm,-0.5cm)}, y={(-1cm,-0.5cm)}, z={(0cm,1cm)}},
+  % ssw/ssd/sst: ssolid 盒沿 x/y/z 的名义边长（基向量倍数），pic 选项里传
+  ssw/.initial=1, ssd/.initial=1, sst/.initial=1,
+  % ssedge: 三面统一描边；\pic[draw=..,line width=..] 经 pic actions 覆盖
+  ssedge/.style={draw=black!55, line width=0.5pt, line join=round},
+  % ssolid=<族色>: 主体盒 pic —— at 锚点 = 底面近角（块立在调用点上）；
+  %   向上堆叠把下一块 at 在上块锚点的 +(0,0,sst 上块)。用法：
+  %   \pic[ssw=2.4,ssd=1.6,sst=0.7] at (0,0) {ssolid=vteal};
+  pics/ssolid/.style={code={%
+    \pgfmathsetmacro{\vza}{\pgfkeysvalueof{/tikz/ssw}}%
+    \pgfmathsetmacro{\vzb}{\pgfkeysvalueof{/tikz/ssd}}%
+    \pgfmathsetmacro{\vzc}{\pgfkeysvalueof{/tikz/sst}}%
+    \draw[ssedge, pic actions, fill=#1!50]
+      (0,0,0) -- (0,-\vzb,0) -- (0,-\vzb,\vzc) -- (0,0,\vzc) -- cycle;  % 侧(右,背光)
+    \draw[ssedge, pic actions, fill=#1!30]
+      (0,0,0) -- (-\vza,0,0) -- (-\vza,0,\vzc) -- (0,0,\vzc) -- cycle;  % 正(左,受光)
+    \draw[ssedge, pic actions, fill=#1!12]
+      (0,0,\vzc) -- (-\vza,0,\vzc) -- (-\vza,-\vzb,\vzc) -- (0,-\vzb,\vzc) -- cycle;
+  }},                                                                 % 顶
+  % vshadow: 落地椭圆投影（bg 层，色固定 vgray!30，不埋点）：
+  %   \fill[vshadow] (cx,cy) ellipse (rx and ry);  rx≈(ssw+ssd)/2, ry≈rx/2
+  vshadow/.style={fill=vgray!30, draw=none},
+  % 薄板 = sst 取小值的 ssolid：\pic[ssw=3,ssd=2,sst=0.14] at (P) {ssolid=vblue};
+  %   （多片等距堆叠时逐片 \vzbbox + 相邻对 overlap=/inside=；板太薄侧面近乎
+  %   消失时改用 tensor.md 的平行四边形+侧唇写法）
+  % 柱体（半径 r、高 h、底面近角 P）无 pic，手画三件：
+  %   \draw[ssedge, fill=C!12] ($(P)+(0cm,h)$)  ellipse ({1.41*r} and {0.71*r});
+  %   \draw[ssedge, fill=C!30] ($(P)+({-1.41*r},h)$) arc[start angle=180,
+  %     end angle=270, x radius={1.41*r}, y radius={0.71*r}]
+  %     -- ($(P)+(0cm,{-0.71*r})$) arc[start angle=270, end angle=180,
+  %     x radius={1.41*r}, y radius={0.71*r}] -- cycle;                % 左壁(受光)
+  %   \draw[ssedge, fill=C!50] ($(P)+({1.41*r},h)$) arc[start angle=0,
+  %     end angle=-90, x radius={1.41*r}, y radius={0.71*r}]
+  %     -- ($(P)+(0cm,{-0.71*r})$) arc[start angle=-90, end angle=0,
+  %     x radius={1.41*r}, y radius={0.71*r}] -- cycle;                % 右壁(背光)
+}
+
+% --- 配方宏（tikzpicture 顶层展开；每条连接器自带 \vzwire 镜像） -----------------
+% 详见 references/tikz/recipes.md；宏语句不产生 coverage 扫描的绘制对象，
+% 其审计覆盖由宏内部 \vzwire 行承担。
+%
+% \seqnum —— seq 图消息序号自增计数器（黑体），\setcounter{vzseq}{0} 复位
+\newcounter{vzseq}
+\newcommand{\seqnum}{\stepcounter{vzseq}\textbf{\thevzseq}}
+%
+% \nskipw{src}{tgt}{通道x}{wire名}{附加tags} —— 左侧旁路一跳一行：
+%   \draw[nskip=x] + 同形 \vzwire（endpoint=src,tgt；穿带等附加声明写第五参，
+%   如 {via=bandB1}，无则 {}）。\nskipwe 是同参东侧镜像（nskipe + .east 锚）。
+\newcommand{\nskipw}[5]{%
+  \draw[nskip=#3] (#1) to (#2);
+  \vzwire{#4}{#1.west;(#3,0 |- #1.west);(#3,0 |- #2.west);#2.west}{endpoint=#1,#2 #5}%
+}
+\newcommand{\nskipwe}[5]{%
+  \draw[nskipe=#3] (#1) to (#2);
+  \vzwire{#4}{#1.east;(#3,0 |- #1.east);(#3,0 |- #2.east);#2.east}{endpoint=#1,#2 #5}%
+}
+%
+% \selfmsg{出口坐标}{条名}{id}{标签}{附加tags} —— seq 图自消息猪尾一体：
+%   draw 折回 + \vzwire{w<id>}（endpoint=条名；合法穿越对象等附加声明写
+%   第五参，如 {via=bdg}，无则 {}——同 \nskipw 第五参惯例）+ 标签节点
+%   （名 <id>l，可 \path \vaudit{<id>l}{..} 补埋点）。几何经 selfw/selfh
+%   键调：\tikzset{selfw=0.9,selfh=0.4}（selfw 负值向左折）。
+%   标签节点内建 align（右折 left、左折 right），长标签直接 \\ 折行。
+%   pic 形等价写法：\pic at (出口) {vselfmsg={条名}{id}{标签}{附加tags}}。
+\newcommand{\selfmsg}[5]{%
+  \pgfmathsetmacro{\vzw}{\pgfkeysvalueof{/tikz/selfw}}%
+  \pgfmathsetmacro{\vzh}{\pgfkeysvalueof{/tikz/selfh}}%
+  \pgfmathsetmacro{\vzxw}{0-\vzw}%
+  \pgfmathsetmacro{\vzyh}{0-\vzh}%
+  \draw[varr] (#1) -- ++(\vzw,0) -- ++(0,\vzyh) -- ++(\vzxw,0);
+  \vzwire{w#3}{#1;($(#1)+(\vzw,0)$);($(#1)+(\vzw,\vzyh)$);($(#1)+(0,\vzyh)$)}{endpoint=#2 #5}
+  \ifdim\vzw pt>0pt
+    \node[vnote, anchor=west, align=left] (#3l) at ($(#1)+({\vzw+0.15},{0.5*\vzyh})$) {#4};
+  \else
+    \node[vnote, anchor=east, align=right] (#3l) at ($(#1)+({\vzw-0.15},{0.5*\vzyh})$) {#4};
+  \fi
+}
+%
+% \snkids[父锚,子锚]{父}{边样式}{子1,子2,...} —— 搜索树批量连边：逐子
+%   \draw[样式]（snkeep/snghost/snret/varr 皆可）+ 逐边 \vzwire（名
+%   w<父>-<子>）。声明折线钉边界锚：竖树默认 父.south→子.north；横树
+%   \snkids[east,west]、自下而上 [north,south] 等换可选首参。裸节点名
+%   落中心点，心到心折线必穿端点盒内文字（readback wire-crosses-text
+%   全报）。子代态不同时按态分组多次调用。
+\newcommand{\snkids}[4][south,north]{%
+  \def\vzsnparent{#2}\def\vzsnedge{#3}%
+  \def\vzsnsplit##1,##2\vzsnstop{\def\vzsnpa{##1}\def\vzsnca{##2}}%
+  \vzsnsplit#1\vzsnstop
+  \foreach \snk in {#4} {%
+    \edef\vzsntmp{\noexpand\draw[\vzsnedge] (\vzsnparent) -- (\snk);}\vzsntmp
+    \vzwire{w\vzsnparent-\snk}{\vzsnparent.\vzsnpa;\snk.\vzsnca}{endpoint=\vzsnparent,\snk}%
+  }%
+}

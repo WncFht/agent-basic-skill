@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Render PDF"
+  short_description: "Turn a YouTube, Bilibili, or SJTU Canvas lecture recording into a structured LaTeX/PDF note set."
+  default_prompt: "Use this skill to turn a YouTube, Bilibili, or SJTU Canvas lecture video into a high-quality LaTeX course note with clear pedagogical motivation and logic. Media acquisition goes through the link-get skill (--media / canvas lecture URLs); extracted figures are inspected with view image rather than OCR, with exhaustive frame recall before selection; segment splitting uses parallel subagents for longer videos; recreated figures go through the figure-viz skill; the original video cover goes on the front page; and the note ends with a final synthesis chapter. Falls back to local ASR transcription (asr skill) when CC subtitles are unavailable."

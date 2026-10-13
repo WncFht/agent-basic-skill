@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Search for academic papers using the Semantic Scholar API."""
+
+import argparse
+import os
+import time
+
+from _http_runtime import create_session, request
+
+
+class AnonymousRateLimitError(RuntimeError):
+    """Anonymous quota is exhausted, so later queries cannot succeed this run."""
+
+    abort_source = True
+
+
+def search_papers_by_semantic_scholar(
+    query: str,
+    start_year: int,
+    end_year: int,
+    max_results: int = 10,
+) -> list[dict]:
+    """Search for papers on Semantic Scholar.
+
+    Args:
+        query: Search query string.
+        start_year: Filter papers published from this year.
+        end_year: Filter papers published up to this year.
+        max_results: Maximum number of papers to return.
+
+    Returns:
+        List of paper dictionaries.
+    """
+    API_KEY = os.environ.get("SEMANTICSCHOLAR_API_KEY", "")
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    fields = (
+        "title,authors,year,abstract,citationCount,url,venue,publicationDate,"
+        "externalIds,publicationTypes"
+    )
+
+    papers: list[dict] = []
+    offset = 0
+    limit = min(100, max_results)  # API max per request is 100
+    session = create_session("PaperSearch/1.0")
+
+    while len(papers) < max_results:
+        params = {
+            "query": query,
+            "offset": offset,
+            "limit": limit,
+            "fields": fields,
+            "year": f"{start_year}-{end_year}",
+        }
+        headers = {"x-api-key": API_KEY} if API_KEY else {}
+
+        response = request(
+            session,
+            "GET",
+            url,
+            source="semantic_scholar",
+            params=params,
+            headers=headers,
+        )
+        if response.status_code == 429 and not API_KEY:
+            raise AnonymousRateLimitError(
+                "Semantic Scholar anonymous access was rate-limited (HTTP 429)."
+            )
+        response.raise_for_status()
+        data = response.json()
+
+        if not data.get("data"):
+            break
+
+        for item in data["data"]:
+            authors = [
+                a.get("name", "") for a in item.get("authors", []) if a.get("name")
+            ]
+            citation_count = item.get("citationCount")
+            publication_types = set(item.get("publicationTypes") or [])
+            if publication_types & {"JournalArticle", "Conference", "Book"}:
+                publication_status = "published"
+            elif (item.get("externalIds") or {}).get("ArXiv"):
+                publication_status = "preprint"
+            else:
+                publication_status = "unknown"
+            papers.append(
+                {
+                    "title": item.get("title", ""),
+                    "authors": authors,
+                    "year": item.get("year"),
+                    "abstract": item.get("abstract", "") or "",
+                    "url": item.get("url", ""),
+                    "venue": item.get("venue", "") or "",
+                    "citation_count": citation_count,
+                    "citation_source": (
+                        "semantic_scholar" if citation_count is not None else None
+                    ),
+                    "publication_date": item.get("publicationDate", ""),
+                    "publication_status": publication_status,
+                    "status_source": (
+                        "semantic_scholar" if publication_status != "unknown" else None
+                    ),
+                    "source": "semantic_scholar",
+                    "doi": (item.get("externalIds") or {}).get("DOI"),
+                    "arxiv_id": (item.get("externalIds") or {}).get("ArXiv"),
+                }
+            )
+
+        offset += limit
+
+        if offset >= data.get("total", 0):
+            break
+
+        time.sleep(1)  # Be polite to the API
+
+    return papers[:max_results]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Search papers on Semantic Scholar")
+    parser.add_argument("--query", required=True, help="Search query")
+    parser.add_argument("--start-year", type=int, required=True, help="Start year")
+    parser.add_argument("--end-year", type=int, required=True, help="End year")
+    parser.add_argument(
+        "--max-papers", type=int, default=10, help="Max number of papers (default: 10)"
+    )
+    args = parser.parse_args()
+
+    papers = search_papers_by_semantic_scholar(
+        args.query, args.start_year, args.end_year, args.max_papers
+    )
+    print(papers[0] if papers else "No papers found.")
+
+# python search_papers_by_semantic_scholar.py --query "data efficacy for LM training" --start-year 2024 --end-year 2026 --max-papers 20

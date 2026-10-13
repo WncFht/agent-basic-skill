@@ -1,0 +1,3 @@
+interface:
+  display_name: "skill-management"
+  short_description: "三 CLI 共用 skills + AGENTS.md 体系的维护手册与体检"

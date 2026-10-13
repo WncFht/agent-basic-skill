@@ -1,0 +1,3 @@
+interface:
+  display_name: "ASR Transcribe"
+  short_description: "Audio/video -> SRT/TXT subtitles with word-level timestamps (EN/ZH, CPU sherpa-onnx + optional GPU lanes)"

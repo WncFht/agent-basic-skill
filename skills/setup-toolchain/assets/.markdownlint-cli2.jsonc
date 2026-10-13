@@ -1,0 +1,7 @@
+{
+    // globs：裸跑 markdownlint-cli2（无参）时的默认文件集——不显式给
+    // globs 裸跑扫 0 文件静默全绿（lint:md 脚本显式传 "**/*.md" 与此同口径）
+    "globs": ["**/*.md"],
+    // 生成物与依赖不进 lint 扫描；规则本身在 .markdownlint.jsonc
+    "ignores": ["node_modules/**"],
+}

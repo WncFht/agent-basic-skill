@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "verified_on": "2026-09-07",
+  "verification": "Per venue-year accepted counts measured live on 2026-09-07 via api2/api.openreview.net (invitation + content.venueid filter, with_count). Shell groups that exist but carry zero submission notes (CVPR/ICCV/AAAI/ACL/EMNLP/NAACL) were removed: group existence is not evidence a venue runs submissions on OpenReview.",
+  "venues": [
+    {
+      "name": "ICLR",
+      "template": "ICLR.cc/{year}/Conference",
+      "min_year": 2017,
+      "v2_from": 2024,
+      "note": "2023 and earlier live on API v1; ICLR 2023 stamps venueid on every active submission, so accepted must be derived from the venue string or Decision replies, not the venueid filter."
+    },
+    {
+      "name": "NeurIPS",
+      "template": "NeurIPS.cc/{year}/Conference",
+      "min_year": 2021,
+      "v2_from": 2023,
+      "note": "Rejected submissions are never publicly readable; 2022 (v1) requires offset pagination - the v1 after-cursor silently drops notes."
+    },
+    {
+      "name": "ICML",
+      "template": "ICML.cc/{year}/Conference",
+      "min_year": 2023,
+      "v2_from": 2023
+    },
+    {
+      "name": "TMLR",
+      "template": "TMLR",
+      "min_year": 2022,
+      "v2_from": 2022,
+      "rolling": true,
+      "note": "Rolling journal, no year in the venue id; never freezes - re-probe on every update."
+    },
+    {
+      "name": "COLM",
+      "template": "colmweb.org/COLM/{year}/Conference",
+      "min_year": 2024,
+      "v2_from": 2024
+    },
+    {
+      "name": "AISTATS",
+      "template": "aistats.org/AISTATS/{year}/Conference",
+      "min_year": 2025,
+      "v2_from": 2025
+    },
+    {
+      "name": "UAI",
+      "template": "auai.org/UAI/{year}/Conference",
+      "min_year": 2024,
+      "v2_from": 2024
+    },
+    {
+      "name": "CoRL",
+      "template": "robot-learning.org/CoRL/{year}/Conference",
+      "min_year": 2024,
+      "v2_from": 2024,
+      "note": "2021-2022 exist on API v1 (optional backfill; outside the v2 registry range)."
+    },
+    {
+      "name": "RLC",
+      "template": "rl-conference.cc/RLC/{year}/Conference",
+      "min_year": 2024,
+      "v2_from": 2024
+    },
+    {
+      "name": "MLSys",
+      "template": "MLSys.org/{year}/Conference",
+      "min_year": 2025,
+      "v2_from": 2025
+    }
+  ]
+}

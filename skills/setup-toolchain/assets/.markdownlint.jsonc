@@ -1,0 +1,14 @@
+// 与编辑器侧 markdownlint 规则保持一致；markdownlint-cli2 和 vscode-markdownlint 都会读取此文件
+{
+    "MD007": { "indent": 4 },
+    "MD010": false,
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD025": false,
+    "MD029": false,
+    "MD033": false,
+    "MD034": false,
+    "MD036": false,
+    "MD040": false,
+    "MD045": false,
+}

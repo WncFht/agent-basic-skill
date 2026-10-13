@@ -1,0 +1,152 @@
+#!/bin/bash
+# youtube-get —— YouTube 链接 → 时间戳转录 md / SRT。
+#
+#   youtube-get <url> [-o DIR] [--fast]
+#
+# 默认链：yt-dlp -J 元数据 → youtube-transcript-api 转录 → yt-dlp 字幕兜底；
+# --fast 只走 defuddle 快读（无时间戳）。无字幕轨 → 退出码 3（交给 media-get + asr）。
+# lgc-needs: get put neg lane key into wait producer
+set -eo pipefail
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+source "$(cd -P "$(dirname "$_s")" && pwd)/_common.sh"
+unset _s _d
+
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+OUT=""
+FAST=0
+TARGET=""
+lg_args "$@"
+_guard_url "$TARGET" || exit 2 # SSRF 闸：字面私网/回环/伪 host 拒于 probe/车道前
+
+VID="$(printf '%s' "$TARGET" | grep -oE '(v=|youtu\.be/|shorts/)[A-Za-z0-9_-]{6,}' | grep -oE '[A-Za-z0-9_-]{6,}$' | head -1 || true)"
+[ -z "$VID" ] && {
+  echo "解不出 YouTube video id：$TARGET" >&2
+  exit 2
+}
+
+if [ "$FAST" = 1 ]; then
+  KF="yt:fast:$VID" # fast 独立键，与全链互不污染
+  ZK="$KF"
+  z_probe link-get "$KF" --into "$OUT" --wait "${LGC_WAIT:-60}"
+  if [ "$ZHIT" = hit ]; then
+    printf '%s\n' "$ZPATHS" | while IFS= read -r _p; do
+      echo "==> 已存 $_p（cache）"
+    done
+    exit 0
+  fi
+  if [ "$ZHIT" = neg ]; then # 负缓存回放：fast 键同样尊重墓碑/不可用
+    case "$ZNEG" in
+    deleted) exit 4 ;;
+    *) exit 5 ;;
+    esac
+  fi
+  if defuddle "$TARGET" "$OUT/defuddle-$VID.md"; then
+    z_store link-get "$KF" --lane defuddle --files "$OUT/defuddle-$VID.md"
+    if [ "$ZDEL" = 1 ]; then
+      z_note link-get "$KF" deleted
+      exit 4
+    fi
+    z_lhit link-get defuddle
+    echo "==> 已存 $OUT/defuddle-$VID.md" && exit 0
+  fi
+  echo "defuddle 快读失败，退回转录链" >&2
+fi
+
+# 主键探测：transcript / subs 任一命中 → 材料化全套走人
+for _k in "yt:tr:$VID" "yt:subs:$VID"; do
+  z_probe link-get "$_k" --into "$OUT" --wait "${LGC_WAIT:-300}"
+  case "$ZHIT" in
+  hit)
+    printf '%s\n' "$ZPATHS" | while IFS= read -r _p; do
+      echo "==> 已存 $_p（cache）"
+    done
+    exit 0
+    ;;
+  neg)
+    case "$ZNEG" in
+    deleted) exit 4 ;;
+    notrack) exit 3 ;;
+    *) exit 5 ;;
+    esac
+    ;;
+  esac
+done
+
+# 负缓存键：yt:text 证无轨/不可用 → 按 ZRC 回放
+ZK="yt:text:$VID"
+z_probe link-get "$ZK"
+if [ "$ZHIT" = neg ]; then
+  case "$ZNEG" in
+  deleted) exit 4 ;;
+  notrack)
+    echo "无字幕轨（缓存判定）——只能走视频管线（link-get --media / asr）" >&2
+    exit 3
+    ;;
+  *) exit 5 ;;
+  esac
+fi
+
+TITLE="$(yt_meta "$TARGET" "$VID" yt:meta)"
+SLUG="$(sanitize "$TITLE")"
+[ -z "$SLUG" ] && SLUG="youtube-$VID"
+
+MD="$OUT/$SLUG--$VID.md"
+ZK="yt:tr:$VID"
+_rc=0
+yt_transcript "$VID" "$MD" || _rc=$?
+if [ "$_rc" -eq 0 ]; then
+  set -- "$MD"
+  [ -s "$OUT/$VID.meta.json" ] && set -- "$@" "$OUT/$VID.meta.json"
+  z_store link-get "$ZK" --lane yt-transcript --producer youtube-get@1 --files "$@"
+  if [ "$ZDEL" = 1 ]; then
+    z_note link-get "$ZK" deleted
+    exit 4
+  fi
+  z_lhit link-get yt-transcript
+  exit 0
+fi
+
+ZK="yt:subs:$VID"
+_rc=0
+yt_subs "$TARGET" "en.*,zh.*,zh-CN,zh-TW" "$VID" || _rc=$?
+if [ "$_rc" -eq 0 ]; then
+  set --
+  for _s in "$OUT"/*--"$VID".*.srt "$OUT"/*--"$VID"_p*.*.srt; do
+    [ -f "$_s" ] && set -- "$@" "$_s"
+  done
+  [ -s "$OUT/$VID.meta.json" ] && set -- "$@" "$OUT/$VID.meta.json"
+  z_store link-get "$ZK" --lane yt-dlp --files "$@"
+  if [ "$ZDEL" = 1 ]; then
+    z_note link-get "$ZK" deleted
+    exit 4
+  fi
+  z_lhit link-get yt-dlp
+  exit 0
+fi
+
+# 双挂分流：meta 证零轨 → notrack(exit3)；meta 缺失/有轨未取到 = transient
+# → 只记 lane 账（z_lfail）exit5，不写内容级墓碑——内容键留给下次重试。
+ZK="yt:text:$VID"
+if [ -s "$OUT/$VID.meta.json" ] && python3 -c "
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+    subs = d.get('subtitles') or {}
+    auto = d.get('automatic_captions') or {}
+except Exception:
+    sys.exit(1)
+sys.exit(0 if not subs and not auto else 1)
+" "$OUT/$VID.meta.json"; then
+  echo "无字幕轨——只能走视频管线（link-get --media / asr）" >&2
+  z_note link-get "$ZK" notrack
+  exit 3
+fi
+echo "字幕双车道全挂（meta 缺失或有轨未取到）：$TARGET" >&2
+z_lfail link-get yt-transcript "$ZK"
+z_lfail link-get yt-dlp "$ZK"
+exit 5

@@ -1,0 +1,41 @@
+# youtube pack — transcript/subs/text fetcher (monolith wrap of youtube-get)
+[pack]
+name = "youtube"
+abi = 1
+ns = "link-get"
+kinds = ["tr", "subs", "text", "fast"]   # default tr = transcript 主键（缓存连续）
+desc = "yt-dlp -J → transcript-api 时间戳转录 → yt-dlp 字幕；`--fast` 走 defuddle"
+
+[match]
+hosts = ["youtube.com", "*.youtube.com", "youtu.be", "*.youtu.be"]
+schemes = ["http", "https"]
+
+[identity]
+keyexpr = "yt:{kind}:{vid}"             # yt:tr:VID / yt:fast:VID 与 connector 内键一致
+# v= 必须有 query 边界——"ev=/prev=/share?v=" 形撞 vid 会让不同视频同键
+capture = { vid = '(?:[?&]v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{6,})' }
+# vid 捕获失败（非常规 URL）→ 回退 "tr:{url}" 每 URL 一键，不塌缩
+
+# 裸 --param fast（分发层不送 kind 时）：fast 旗标自决 kind=fast——
+# 否则 kind=tr 键收到 fast 产物（defuddle 无时间戳），双向污染
+[[identity.derive]]
+target = "kind"
+value = "fast"
+when_truthy = "fast"
+
+[params]
+fast = { type = "bool", desc = "--fast 快读臂（defuddle 无时间戳）；分发层同注 kind=fast → kind_flags" }
+
+[[lanes]]
+name = "youtube-get"
+exec = "monolith"
+connector = "../../scripts/connectors/youtube-get"
+needs = { tools = ["yt-dlp", "curl"], env = [], env_optional = ["LGC_WAIT"], creds = ["~/.config/yt-dlp/config"] }
+egress = { hosts = ["*.youtube.com", "youtu.be", "*.googleapis.com"], proxy = "optional" }
+budget_ms = 180000
+fail_note = false                     # 单车道臂必设：transient→lane×key neg→cooling→dep_absent 死循环实锤陷阱
+
+[monolith]
+argv = ["{url}", "-o", "{artifact_dir}"]
+kind_flags = { fast = "--fast" }        # kind=fast → connector --fast
+flag_params = { refresh = "--refresh" }

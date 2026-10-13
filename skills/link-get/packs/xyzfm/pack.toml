@@ -1,0 +1,98 @@
+# xyzfm pack — 小宇宙：官方文字稿（需 token）→ shownotes 匿名兜底 + QR 铸凭证。
+#
+# 转写链（2026-09 逆向，lanes/_lib.py 头注有全协议）：episode 页
+# __NEXT_DATA__ → transcriptMediaId → POST api episode-transcript/get（安卓
+# 头套 + x-jike-access-token + x-jike-device-id，缺一即 401/rpc_error）→
+# transcript.xyzcdn.net 签名链（CDN UA ACL）→ gzip JSON [{text,startMs}]。
+#
+# 投毒防法：tr 臂内 sn 兜底产物按请求键入 tr:<eid>——satisfies form 断言
+# 挡住（tr 请求恒断言 form=transcript，sn 束记 form=shownotes 探测必 miss，
+# mint 后重试立刻转正）；art 请求经 derive 断言 form=shownotes 正常命中。
+# noresults 绝不用于「该集无转写」——内容键 24h neg 会连 shownotes 兜底一起
+# 锁死，一律 notcovered（lane×key，重试自动跳过本 lane）。
+cred_domain = "xyzfm"     # ~/.config/xyzfm/token.json → lgc xyzfm 域
+writes_cred = "xyzfm"     # xyzfm-mint meta-lane 写回 token.json
+
+[pack]
+name = "xyzfm"
+abi = 1
+ns = "link-get"
+kinds = ["tr", "art", "mint"]
+desc = "小宇宙：官方文字稿（带时间戳，需 token）→ shownotes 匿名兜底；--mint 扫码铸凭证"
+
+[match]
+hosts = ["xiaoyuzhoufm.com", "*.xiaoyuzhoufm.com"]
+schemes = ["http", "https"]
+[[match.bare]]
+pattern = '^([0-9a-fA-F]{24})$'
+rewrite = 'https://www.xiaoyuzhoufm.com/episode/{1}'   # 裸 eid 直通
+
+[identity]
+# mint 键常量 xyzfm:meta:mint——lgc kind_of 最长前缀 → xyzfm:meta ∈ _XYZFM_KINDS
+# → cred 域指纹：token 轮换 lane 账自愈（bili:meta:mint 平价）；铸凭证是全局
+# 操作不按 URL，常量键防撞内容键（data 终态不入库；并发互斥靠 lane 内 flock）。
+keyexpr = { default = "xyzfm:{kind}:{eid}", tr = "xyzfm:tr:{eid}", art = "xyzfm:art:{url}", mint = "xyzfm:meta:mint" }
+# art 键直引 {url} 不走 {eid}——capture_miss 的引擎回退是 '{kind}:{raw}'
+# （无 xyzfm: 前缀 → 落进 zhihu art cred 域/未注册 kind，TTL 全错）；
+# art catchall '/|^[^/]+$' 接住 /podcast/ 与全部其他页（首页/主播页），
+# tr 只吃真 episode——其他页不再漏出 tr:<url> 未注册键。
+kind_by_url = { tr = '/episode/', art = '/|^[^/]+$' }
+match_scope = "path"
+capture = { eid = '/episode/([0-9a-fA-F]{24})' }
+satisfies = { form = { param = "form", default = "transcript" } }
+
+# art 请求断言 shownotes：art 键下只有 sn 产物——不派生则继承 default=
+# transcript 断言永 miss（shownotes 永远重抓）
+[[identity.derive]]
+target = "form"
+value = "shownotes"
+when_kind = ["art"]
+
+[params]
+mint = { type = "bool", desc = "--mint：token.json 有 refresh → 快速换新；否则扫码重铸（壳映射 kind=mint → xyzfm-mint）" }
+form = { type = "str", values = ["transcript", "shownotes"], desc = "缓存产物形态断言——内部字段由 lane result.params/derive 维护，勿手传" }
+
+[[lanes]]
+name = "xyzfm-tr"
+exec = "lanes/xyzfm_tr.py"
+params_gate = { mint = ["", "false", "0"] }   # 三保险：mint=true 永不进抓取车道（bili 平价）
+needs = { tools = ["python3"], creds = ["~/.config/xyzfm/token.json"] }
+egress = { hosts = ["*.xiaoyuzhoufm.com", "*.xyzcdn.net"], proxy = "optional" }
+budget_ms = 90000
+
+[[lanes]]
+name = "xyzfm-sn"
+exec = "lanes/xyzfm_sn.py"
+params_gate = { mint = ["", "false", "0"] }
+fail_note = false    # art 臂单车道：transient 上账→冷却→dep_absent 死亡螺旋（generic/bili 实证）
+needs = { tools = ["python3"] }
+egress = { hosts = ["*.xiaoyuzhoufm.com"], proxy = "optional" }
+budget_ms = 45000
+
+[[lanes]]
+name = "xyzfm-mint"
+exec = "lanes/xyzfm_mint.py"
+writes_cred = "xyzfm"   # meta-lane：唯一可写 artifact_dir 外（token.json）
+fail_note = false       # remint 是修复路径不是 hammer（bili_mint 平价）
+# 不设 lane 级 kinds：兜底臂把 tr/art+mint=true 流量也送来，kinds 闸会掐死；
+# lane 内 kind!=mint && !params.mint → rc10 自保
+# qrencode 不进 needs.tools——缺席时 QR 只给链接不渲图，lane 内软降级
+needs = { tools = ["python3"] }
+egress = { hosts = ["web-api.xiaoyuzhoufm.com", "api.xiaoyuzhoufm.com"], proxy = "off" }
+budget_ms = 300000      # 扫码人工时
+
+[[routes]]
+kinds = ["mint"]        # kind 覆盖（壳 --mint → kind=mint）→ 只进 meta-lane
+lanes = ["xyzfm-mint"]
+
+[[routes]]
+params = { mint = true }    # 裸 --param mint / 裸 eid+--mint 兜底（bili 平价）
+lanes = ["xyzfm-mint"]
+
+[[routes]]
+kinds = ["tr"]
+lanes = ["xyzfm-tr", "xyzfm-sn"]   # auth 死→级联 shownotes（satisfies 防投毒）
+
+[[routes]]
+kinds = ["art"]
+lanes = ["xyzfm-sn"]

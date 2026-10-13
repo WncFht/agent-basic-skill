@@ -1,0 +1,3 @@
+interface:
+  display_name: "link-get"
+  short_description: "任意链接 → 文本（Markdown/SRT）统一入口；--media 落盘视频与音频"

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 与 pre-commit 同源：本地不过 CI 必挂。本文件是通用 base——format 门控
+# （prettier check + markdownlint），每个仓库都有。
+# 其他文件类型的 CI job/steps 按 census 结果从 skill 的
+# references/recipes.md 逐卡追加到 jobs: 下（缩进两级）。
+jobs:
+  format:
+    name: Format & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install toolchain
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint:md
+
+      - name: YAML comment width
+        run: python3 scripts/check-yaml-comments.py

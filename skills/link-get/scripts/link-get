@@ -1,0 +1,362 @@
+#!/bin/bash
+# link-get —— 任意链接/裸 ID → 文本内容的统一入口；旗标翻译为 fetch-engine --param。
+#
+#   link-get <url|id> [-o DIR] [--fast|--comments|--media|--refresh|--cache-ttl SEC…]
+#   link-get <url> --mc <search|detail|creator> [args...]   # 知乎目标 → zhihu-get --mc
+#
+# 路由单一事实源 = pack.toml（[match] hosts + [[match.bare]] 重写 + kind_by_url +
+# [[routes]]）——壳不做域名分发，裸 host/裸 ID 直通 engine 由 bare_resolve 决断。
+# 壳只保留旗标→param 域映射（engine routes 只做 kind×params 车道选择，这些键是
+# identity key_params/enum 注入契约、不由 routes 派生）：
+#   --media                → 强制 -p media（视频/音频落盘，喂渲染管线）
+#   --fast + youtube       → 同注 kind=fast（monolith kind_flags → connector --fast）
+#   --mint + bilibili      → 同注 kind=mint（锁 bili_mint meta-lane，永不落抓取臂）
+#   --comments/--fast + zhihu → 按 URL 形态注 variant=+c/+f（≡ connector zkey()）
+#   枚举旗标 + canvas      → kind=enum enum=<x>；无 TARGET 补 sjtu 占位（删了会回归）
+# 带值兼容表 lecture|camera|download|cover-at|max-height|langs|cache-ttl|token|o
+# 保留 `--k v` 空格形（canvas-get 旁路 argv 契约，故 ARGS 留两参形）；第二组
+# 纯 engine param（arxiv mode/section、generic doc 臂、canvas enum/course）
+# 空格形同义但不进 ARGS——旁路不背这些旗标。其余旗标一律 --k[=v] → --param，
+# 未知 param 由 engine [params] 声明表拒 rc2——壳不再维护白名单。
+#
+# 旁路（不经 engine）：--mc（知乎 MediaCrawler 枚举，非 fetch 管线）→ zhihu-get；
+# canvas --download（签名链新鲜性契约）→ canvas-get（$CONN 优先 PATH 兜底）。
+# --token 是凭证不是 fetch 参数——映射 CANVAS_TOKEN env，永不进 --param/argv/journal。
+set -eo pipefail
+
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+CONN="$(cd -P "$(dirname "$_s")" && pwd)/connectors"
+ENG="$(cd -P "$(dirname "$_s")" && pwd)/fetch-engine"
+unset _s _d
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+
+resolve_conn() { # 旁路连接器解析：$CONN 优先，PATH 兜底；缺则报 rc2
+  local p="$CONN/$1"
+  [ -x "$p" ] || p="$(command -v "$1" 2>/dev/null || true)"
+  [ -n "$p" ] || {
+    echo "缺 $1（$CONN 与 PATH 均未命中——跑 scripts/setup.sh 重链）" >&2
+    return 2
+  }
+  printf '%s' "$p"
+}
+
+# 入口 host 闸（SSRF 前置）：source connectors/_common.sh 复用其 _guard_url 单一
+# 实现。只审带 scheme 的 TARGET——裸串无 host 可审，canon 后由 engine 同闸裁决。
+source "$CONN/_common.sh"
+
+MEDIA=0 MC=0 COMMENTS=0 FAST=0
+TARGET="" OUTDIR="" TOKENV=""
+declare -a ARGS POS MC_TAIL ENG_P ENG_FLAGS FLAGS
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --media)
+    MEDIA=1
+    FLAGS+=("$1")
+    shift
+    ;;
+  -o | --output)
+    OUTDIR="${2:?-o 需要目录参数}"
+    FLAGS+=("$1")
+    ARGS+=("$1" "$OUTDIR")
+    shift 2
+    ;;
+  -o=* | --output=*)
+    # 等号形归一为两参形——否则落 -* 臂变 --param o=dir（o 是 RESERVED 键
+    # 过闸但无人读，-o 静默失效）
+    OUTDIR="${1#*=}"
+    FLAGS+=("$1")
+    ARGS+=("--output" "$OUTDIR")
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  --mc) # zhihu-get --mc 吃掉其后全部参数：原样截尾不再逐项解析
+    MC=1
+    shift
+    MC_TAIL=("$@")
+    ARGS+=("--mc" "$@")
+    break
+    ;;
+  --token) # Canvas PAT 是凭证不是 fetch 参数——CANVAS_TOKEN env 透传，不进 argv/journal
+    TOKENV="${2:?--token 需要参数}"
+    FLAGS+=("$1")
+    ARGS+=(--token "$TOKENV")
+    shift 2
+    ;;
+  --token=*) # 等号形同语义——归一为两参形喂 canvas-get 旁路
+    TOKENV="${1#--token=}"
+    FLAGS+=("$1")
+    ARGS+=(--token "$TOKENV")
+    shift
+    ;;
+  --comments)
+    COMMENTS=1
+    ENG_P+=(comments)
+    FLAGS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  --comments=*)
+    # 等号形布尔：真值与裸旗同语义（zhihu variant 注入看 COMMENTS=1）；
+    # 假值原样透传 comments=0
+    _v="${1#--comments=}"
+    case "$_v" in 1 | true | yes | on) COMMENTS=1 ;; esac
+    ENG_P+=("comments=$_v")
+    FLAGS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  --fast)
+    FAST=1
+    ENG_P+=(fast)
+    FLAGS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  --fast=*)
+    _v="${1#--fast=}"
+    case "$_v" in 1 | true | yes | on) FAST=1 ;; esac
+    ENG_P+=("fast=$_v")
+    FLAGS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  --media=*)
+    case "${1#--media=}" in 1 | true | yes | on) MEDIA=1 ;; esac
+    FLAGS+=("$1")
+    shift
+    ;;
+  --budget-ms | --budget-ms=*)
+    # engine 旗标不是 param——落 -* 臂变 --param budget_ms（RESERVED 豁免
+    # 过闸但 engine 只认真旗标，预算静默失效）。engine-only：不进 ARGS
+    # （canvas --download 旁路是 connector 原生 argv 契约，不背 engine 旗标）
+    FLAGS+=("$1")
+    case "$1" in
+    *=*)
+      ENG_FLAGS+=(--budget-ms "${1#*=}")
+      shift
+      ;;
+    *)
+      ENG_FLAGS+=(--budget-ms "${2:?--budget-ms 需要参数}")
+      shift 2
+      ;;
+    esac
+    ;;
+  --cache-ttl | --lecture | --camera | --download | --cover-at | --max-height | --langs)
+    # 带值兼容表：--k v 空格形保留进 ARGS（canvas-get 旁路契约）+ engine --param k=v
+    _k="${1#--}"
+    FLAGS+=("$1")
+    ARGS+=("$1" "${2:?带值旗标需要参数}")
+    ENG_P+=("${_k//-/_}=$2")
+    shift 2
+    ;;
+  --mode | --section | --lang | --pages | --model | --api | --format | --enum | --course)
+    # 纯 engine 带值 param 的空格形（arxiv mode/section、generic doc 臂、canvas
+    # enum/course）——不进 ARGS：canvas-get/zhihu-get 旁路不背这些旗标。
+    # 缺席此表时 `--mode abstract` 会坍成 mode=True+值被当位置参吞掉。
+    _k="${1#--}"
+    FLAGS+=("$1")
+    ENG_P+=("${_k//-/_}=${2:?带值旗标需要参数}")
+    shift 2
+    ;;
+  --param)
+    # 显式透传兜底：--param k=v 原样进 engine——未来新带值 param 不必回此表挂号
+    ENG_P+=("${2:?--param 需要 k=v 参数}")
+    FLAGS+=("$1")
+    shift 2
+    ;;
+  --param=*)
+    ENG_P+=("${1#--param=}")
+    FLAGS+=("$1")
+    shift
+    ;;
+  -*)
+    # 其余旗标一律 --k[=v] → --param 透传（含带值旗标等号形如 --lecture=3）；
+    # 未知 param 由 engine [params] 声明表拒 rc2。破折号→下划线只作用键名
+    # ——整串替换会把值里的 - 也吃掉（--download=/tmp/a-b → a_b）
+    _k="${1#--}"
+    _k="${_k#-}"
+    case "$_k" in
+    *=*)
+      _n="${_k%%=*}"
+      ENG_P+=("${_n//-/_}=${_k#*=}")
+      ;;
+    *) ENG_P+=("${_k//-/_}") ;;
+    esac
+    FLAGS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  *)
+    [ -z "$TARGET" ] && TARGET="$1"
+    POS+=("$1")
+    ARGS+=("$1")
+    shift
+    ;;
+  esac
+done
+# link-get --mc <mode> <url> 形态：URL 在 --mc 尾部，借出做路由（透传仍在尾部）；
+# 尾无 URL（--mc search kw 形态）则整尾交 zhihu-get --mc
+if [ -z "$TARGET" ] && [ "$MC" = 1 ]; then
+  for _a in "${MC_TAIL[@]}"; do
+    case "$_a" in *://*)
+      TARGET="$_a"
+      break
+      ;;
+    esac
+  done
+  if [ -z "$TARGET" ]; then
+    ZGET="$(resolve_conn zhihu-get)" # 缺 connector 报 rc2（不进 exec 空串 rc127）
+    exec "$ZGET" --mc "${MC_TAIL[@]}"
+  fi
+fi
+# 裸枚举旗标无课程目标——补 sjtu 占位 TARGET（枚举臂只看 enum 参数；删了会回归）。
+# 扫 FLAGS（真旗标位）不扫 ARGS——值位元素（--token <v>/-o <v>）撞上枚举名不该触发
+if [ -z "$TARGET" ]; then
+  for _a in ${FLAGS[@]+"${FLAGS[@]}"}; do
+    case "$_a" in --list-courses | --files | --announcements | --assignments)
+      TARGET="https://oc.sjtu.edu.cn/"
+      break
+      ;;
+    esac
+  done
+fi
+[ -z "$TARGET" ] && {
+  usage
+  exit 2
+}
+
+# SSRF 前置闸：带 scheme 的 TARGET 过闸；--mc 尾部夹带 URL 同样过闸
+case "$TARGET" in *://*) _guard_url "$TARGET" || exit 2 ;; esac
+if [ "$MC" = 1 ]; then
+  for _a in "${MC_TAIL[@]}"; do
+    case "$_a" in *://*) _guard_url "$_a" || exit 2 ;; esac
+  done
+fi
+
+# --mc 是知乎 MediaCrawler 语义、非 fetch 管线——永远旁路 exec zhihu-get；
+# zhihu-get 语义 --mc 必须是首参，positionals 追加为 mc 目标；非知乎目标误用 rc2。
+# host 边界匹配（剥 scheme 后比对 host 段）——*zhihu.com* 子串会放进
+# zhihu.com.evil.com 旁路抓恶意站
+if [ "$MC" = 1 ]; then
+  _hostp="${TARGET#*://}"
+  case "$_hostp" in
+  zhihu.com | zhihu.com/* | *.zhihu.com | *.zhihu.com/*)
+    ZGET="$(resolve_conn zhihu-get)"
+    exec "$ZGET" --mc "${MC_TAIL[@]}" "${POS[@]}"
+    ;;
+  *)
+    echo "--mc 仅适用于知乎目标：$TARGET" >&2
+    exit 2
+    ;;
+  esac
+fi
+
+eng_run() { # $1=可选强制 pack（仅 --media）；闸放这：--download 旁路不经 engine 不连坐
+  [ -x "$ENG" ] || {
+    echo "fetch-engine 不可执行（$ENG）——跑 scripts/setup.sh" >&2
+    exit 2
+  }
+  local -a eargs=(run "$TARGET")
+  [ -n "$1" ] && eargs+=(-p "$1")
+  [ -n "$OUTDIR" ] && eargs+=(-o "$OUTDIR")
+  local kv
+  for kv in ${ENG_FLAGS[@]+"${ENG_FLAGS[@]}"}; do eargs+=("$kv"); done
+  for kv in ${ENG_P[@]+"${ENG_P[@]}"}; do eargs+=(--param "$kv"); done
+  exec "$ENG" "${eargs[@]}"
+}
+
+# --token 导出须在 media exec 之前——--media --token X 顺序敏感（exec 不返）
+[ -n "$TOKENV" ] && export CANVAS_TOKEN="$TOKENV"
+[ "$MEDIA" = 1 ] && eng_run media
+
+# --- 旗标→param 域映射（路由本体在 pack.toml [match]，壳不选 pack）---
+# sjtu 臂用 host 边界匹配（旁路 exec 不经 engine——*oc.sjtu.edu.cn* 子串会把
+# oc.sjtu.edu.cn.evil.com 喂给 canvas-get 旁路抓恶意站）
+_hostp="${TARGET#*://}"
+case "$_hostp" in
+oc.sjtu.edu.cn | oc.sjtu.edu.cn/* | *.oc.sjtu.edu.cn | *.oc.sjtu.edu.cn/* | v.sjtu.edu.cn | v.sjtu.edu.cn/* | *.v.sjtu.edu.cn | *.v.sjtu.edu.cn/*)
+  # --download 是 --files 配参、签名链须新鲜——恒直连 connector；
+  # 其余枚举类 → kind=enum enum=<x>（canvas-rest/canvas-mint data lane）。
+  # 枚举/铸凭证旗标一次一个——混用（--files --mint）语义互斥，注入胜负靠
+  # 数组序是静默掷骰，诚实拒 rc2
+  _enum_n=0
+  for _a in ${FLAGS[@]+"${FLAGS[@]}"}; do
+    case "$_a" in --list-courses | --files | --announcements | --assignments | --mint)
+      _enum_n=$((_enum_n + 1))
+      ;;
+    esac
+  done
+  [ "$_enum_n" -gt 1 ] && {
+    echo "枚举/铸凭证旗标互斥（一次一个）" >&2
+    exit 2
+  }
+  for _a in ${FLAGS[@]+"${FLAGS[@]}"}; do
+    case "$_a" in
+    --download | --download=*)
+      # CANVAS_GET env 覆盖 > $CONN/canvas-get > PATH（签名链契约指定的解析序）
+      CGET="${CANVAS_GET:-$(resolve_conn canvas-get)}"
+      [ -x "$CGET" ] || {
+        echo "canvas-get 不可执行：$CGET" >&2
+        exit 2
+      }
+      # --token 剥出 argv——CANVAS_TOKEN env 已导出（/proc cmdline 世界可读，
+      # PAT 不能晾在旁路 argv 上）；canvas-get token 优先级 --token>env>file
+      local_bargs=()
+      _skip=0
+      for _b in "${ARGS[@]}"; do
+        if [ "$_skip" = 1 ]; then
+          _skip=0
+          continue
+        fi
+        case "$_b" in
+        --token) _skip=1 ;;
+        --token=*) ;; # 防御：解析期已归一两参形，漏网等号形同样滤
+        *) local_bargs+=("$_b") ;;
+        esac
+      done
+      exec "$CGET" "${local_bargs[@]}"
+      ;;
+    --list-courses) ENG_P+=(kind=enum enum=courses) ;;
+    --files) ENG_P+=(kind=enum enum=files) ;;
+    --announcements) ENG_P+=(kind=enum enum=announcements) ;;
+    --assignments) ENG_P+=(kind=enum enum=assignments) ;;
+    --mint) ENG_P+=(kind=enum enum=mint) ;;
+    esac
+  done
+  ;;
+*youtube.com* | *youtu.be*)
+  [ "$FAST" = 1 ] && ENG_P+=(kind=fast)
+  ;; # kind_flags → connector --fast
+*bilibili.com* | *b23.tv*)
+  # --mint 是重铸凭证不是抓取——kind 覆盖锁 mint 臂（routes 另有 params={mint}
+  # 兜底臂，裸 --param mint 不送 kind 也锁 bili_mint）
+  for _a in ${FLAGS[@]+"${FLAGS[@]}"}; do [ "$_a" = "--mint" ] && ENG_P+=(kind=mint); done
+  ;;
+*xiaoyuzhoufm.com*)
+  # 同 bili：--mint → kind=mint 锁 xyzfm-mint meta-lane（常量键 single-flight）；
+  # 裸 eid+--mint 走 routes params={mint} 兜底臂同达
+  for _a in ${FLAGS[@]+"${FLAGS[@]}"}; do [ "$_a" = "--mint" ] && ENG_P+=(kind=mint); done
+  ;;
+*zhihu.com* | *zhuanlan*)
+  # variant ∈ {+c,+f} 由分发层按旗标填（pack identity key_params 契约）：
+  # answer 支 comments→+c elif fast→+f；p/question 仅 +f；column/zhuanlan 仅 +c
+  # （zhuanlan /p/N 命中 p 臂——comments 按 art 语义忽略）
+  case "$TARGET" in
+  */answer/*)
+    if [ "$COMMENTS" = 1 ]; then ENG_P+=(variant=+c); elif [ "$FAST" = 1 ]; then ENG_P+=(variant=+f); fi
+    ;;
+  */p/* | */question/*) [ "$FAST" = 1 ] && ENG_P+=(variant=+f) ;;
+  */column/* | *zhuanlan.zhihu.com/*) [ "$COMMENTS" = 1 ] && ENG_P+=(variant=+c) ;;
+  esac
+  ;;
+esac
+
+eng_run

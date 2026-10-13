@@ -1,0 +1,311 @@
+% vizaudit.tex — figure self-audit machinery. \input{vizaudit} in preamble.
+% Exports audited node bboxes to \jobname.audit for scripts/check_audit.py.
+%
+% MUST be \input in the preamble at top level (after \usepackage{tikz};
+% render_tex --frag already loads it). Two guards below enforce this:
+%   - a second \input anywhere is a silent no-op (\endinput)
+%   - \input inside a group (document body, tikzpicture, braces) warns and
+%     skips: blank lines would leak invisible line boxes that break the
+%     standalone crop, and the every-picture hook would register too late.
+%
+% Usage inside tikzpicture:
+%   \node[vaudit={class=W}] (A) ...;          % audit the node being drawn
+%   \path \vaudit{A}{eqwh=B};               % add extra tags to existing node
+%   \vzbbox{shards}{(0,0)}{(4,1)}             % audit an unnamed rectangle region
+%   \vzbbox{lane}{(0,0)}{(12,2)}[class=band]  % region carrying tags (optional 4th arg)
+%   \vzwire{c1}{A.east; (2,1); B.west}{endpoint=A,B}  % audit a connector path
+%   (\vzbbox/\vzwire are top-level commands; do NOT prefix with \path)
+%
+% Tags (comma-separated):
+%   class=<id>   all nodes with same class must have identical w,h
+%   square       width == height
+%   twin=<node>  transpose pair: my w,h == other's h,w (repeatable)
+%   eqww/eqhh/eqwh/eqhw=<node>  my dim == other's dim (repeatable;
+%                w=width,h=height)
+%   tiles=<node> I am one shard; all shards with same parent must tile it
+%   inside=<node> declared containment — verified: target must be audited and
+%                actually contain this box (repeatable: inside=a,inside=b)
+%   adjacent=<n> declared intentional adjacency — suppresses CROWD (repeatable)
+%   overlap=<n>  declared intentional partial overlap (stacked sheets etc.) —
+%                exempts COLLIDE for the pair, verified: a declared pair that
+%                stops overlapping warns; full containment is still NEST —
+%                declare inside= instead (symmetric, repeatable)
+%   alignx=<node>, aligny=<node>  center alignment (repeatable, chained:
+%                alignx=a,alignx=b puts a, b and this node on one axis)
+%
+% \vzwire tags (space-separated clauses, comma-separated names):
+%   endpoint=A,B   audited boxes this connector legitimately terminates on
+%   via=C          audited boxes it legitimately passes through
+% Any other audited box a wire segment enters deeper than --edge is WIRE-CROSS.
+% Curved connectors: approximate the curve with a few waypoints — the audit
+% sees the author-declared polyline.
+%
+% Notes on robustness:
+% - vaudit records its own node's name via execute at end node, so the dump
+%   always targets the node the key was applied to — a later node on the same
+%   path can no longer steal the row (stale-\tikzlastnode pollution).
+% - vaudit on a path that never typesets a node (\draw[vaudit], \fill[vaudit],
+%   \path[vaudit]) never produces a row; a document-level request/dump balance
+%   emits a LaTeX warning instead of the old silent skip.
+% - Rotated/sloped nodes dump the true axis-aligned bbox of the rotated shape
+%   (min/max over all four corner anchors), not the sw/ne corners which for a
+%   rotated node no longer bound the shape.
+%
+% 'origin' rows (no '|', so check_audit.py's parser skips them) support
+% scripts/check_readback_tex.py: at the end of every tikzpicture one row
+%   origin <picid> <picminx> <picminy> <picmaxx> <picmaxy> <paperw> <paperh>
+% records the picture's own bbox (pgf coords, pt) plus the page size. The row
+% describes the audit rows back to the previous origin row; the readback
+% checker maps box = page_rect(pic) + border where border = (paper-pic)/2 —
+% exact for the standard standalone single-picture crop.
+%
+% Overlay: render_tex.py --overlay compiles a wrapper that sets \vzoverlaytrue
+% before \input{vizaudit}; the flag makes every audit registration paint
+% itself (dashed vzova frames + tiny SW name tags for nodes/regions, dashed
+% vzovw polyline + endpoint dots for wires). \newif is guarded by
+% \@ifundefined so the wrapper's flag survives — do NOT use \ifdefined here:
+% it expands its argument and \ifvzoverlay is itself a conditional.
+
+\ifdefined\vzauditloaded\expandafter\endinput\fi
+\ifnum\currentgrouplevel>0
+  \PackageWarning{vizaudit}{loaded inside a group (document body or
+    tikzpicture?) — audit machinery skipped; move it to the preamble}%
+  \expandafter\endinput\fi
+\global\def\vzauditloaded{1}
+
+\newwrite\vzauditfile
+\AtBeginDocument{\immediate\openout\vzauditfile\jobname.audit}
+\AtEndDocument{\immediate\closeout\vzauditfile}
+
+\makeatletter
+\newdimen\vz@xmin \newdimen\vz@ymin \newdimen\vz@xmax \newdimen\vz@ymax
+\newcount\vz@req \newcount\vz@got \newcount\vz@ovn \newcount\vz@picdepth
+\def\vz@want{}
+
+% --- debug overlay flag + own colors (vizaudit must work without vizstyle) ---
+\@ifundefined{ifvzoverlay}{\newif\ifvzoverlay}{}
+\definecolor{vzova}{rgb}{0.93,0.60,0.36}%  ~vorange
+\definecolor{vzovw}{rgb}{0.54,0.45,0.71}%  ~vviolet
+
+% --- origin calibration rows for check_readback_tex.py -----------------------
+% executed at the end of every tikzpicture; \pgf@picminx.. hold the picture's
+% final bbox in pgf coords at that point. No '|' in the row -> invisible to
+% check_audit.py.
+\def\vz@origin{%
+  \immediate\write\vzauditfile{%
+    origin \ifdefined\pgfpictureid\pgfpictureid\else pic\fi
+    \space\the\pgf@picminx\space\the\pgf@picminy
+    \space\the\pgf@picmaxx\space\the\pgf@picmaxy
+    \space\the\paperwidth\space\the\paperheight}%
+}
+% nested pictures (pgfplots axes, fit nodes, pics) fire 'execute at end
+% picture' too — only the OUTERMOST picture may write the origin row, or
+% boxes get attributed to a nested frame. Depth tracking: begin-picture
+% bumps, end-picture writes only at depth 1 then decrements (at the end of
+% a nested picture the depth still reads 2, so it is correctly skipped).
+% every picture re-registers: \tikz@atend@picture resets per picture, and
+% 'execute at ... picture' appends (cumulative), so this is additive with
+% any user hooks.
+\def\vz@originend{%
+  \ifnum\vz@picdepth=\@ne \vz@origin \fi
+  \global\advance\vz@picdepth\m@ne
+}
+\tikzset{every picture/.append style={%
+  execute at begin picture=\global\advance\vz@picdepth\@ne,
+  execute at end picture=\vz@originend}}
+
+% --- overlay drawing ----------------------------------------------------------
+% all overlay paint runs inside \pgfinterruptpath so the interrupted outer
+% path survives; helpers read the box from \vz@xmin..\vz@ymax.
+\def\vz@ovrect#1{% dashed orange rect over the audited box + tiny SW name tag
+  \ifvzoverlay
+    \pgfinterruptpath
+      % recorded coords are absolute — paint under identity CM or a scope/pic
+      % transform would shift the overlay off the audited box
+      \pgftransformreset
+      \pgfsetstrokecolor{vzova}\pgfsetlinewidth{0.55pt}%
+      \pgfsetdash{{2.5pt}{1.8pt}}{0pt}%
+      \pgfpathrectanglecorners
+        {\pgfpoint{\vz@xmin}{\vz@ymin}}{\pgfpoint{\vz@xmax}{\vz@ymax}}%
+      \pgfusepath{stroke}%
+      \pgftext[left,bottom,at=\pgfpoint{\vz@xmin}{\vz@ymin}]%
+        {\textcolor{vzova}{\tiny\ttfamily\detokenize{#1}}}%
+    \endpgfinterruptpath
+  \fi
+}
+% walk vz@wirepts ('{x}{y}{x}{y}...'): first point moveto, rest lineto; the
+% first/last point are kept in vz@ovf* / vz@ovl* for the endpoint dots.
+\def\vz@ovpoly#1#2{%
+  \ifnum\vz@ovn=\z@
+    \pgfpathmoveto{\pgfpoint{#1}{#2}}\def\vz@ovfx{#1}\def\vz@ovfy{#2}%
+  \else
+    \pgfpathlineto{\pgfpoint{#1}{#2}}%
+  \fi
+  \def\vz@ovlx{#1}\def\vz@ovly{#2}\advance\vz@ovn\@ne
+  \@ifnextchar\bgroup{\vz@ovpoly}{}%
+}
+\def\vz@ovwire{%
+  \ifvzoverlay
+    % empty waypoint list would feed \relax/\pgfusepath into \vz@ovpoly's
+    % two-argument walk — skip the whole paint instead of crashing
+    \ifx\vz@wirepts\pgfutil@empty\else
+      \pgfinterruptpath
+        \pgftransformreset% absolute coords — see \vz@ovrect
+        \pgfsetstrokecolor{vzovw}\pgfsetlinewidth{0.6pt}%
+        \pgfsetdash{{2.5pt}{2pt}}{0pt}%
+        \vz@ovn=\z@
+        \expandafter\vz@ovpoly\vz@wirepts\relax
+        \pgfusepath{stroke}%
+        \pgfsetfillcolor{vzovw}%
+        \pgfpathcircle{\pgfpoint{\vz@ovfx}{\vz@ovfy}}{1.3pt}%
+        \pgfpathcircle{\pgfpoint{\vz@ovlx}{\vz@ovly}}{1.3pt}%
+        \pgfusepath{fill}%
+      \endpgfinterruptpath
+    \fi
+  \fi
+}
+
+% document-level balance: a vaudit key applied to a path that never typesets a
+% node requests an audit that produces no row — warn instead of silent skip
+\AtEndDocument{%
+  \ifnum\vz@req>\vz@got
+    \PackageWarning{vizaudit}{\the\vz@req\space vaudit tag(s) applied but only
+      \the\vz@got\space produced audit rows; vaudit on non-node paths is ignored}%
+  \fi
+}
+
+% --- bbox dump --------------------------------------------------------------
+% min/max over eight anchors => true AABB even under rotate/sloped. Corners
+% alone suffice for rectangles, but circle/ellipse corner anchors sit ON the
+% border (inscribed square, ~0.707x) — the compass anchors carry the extent.
+\def\vz@corner{%
+  \ifdim\pgf@x<\vz@xmin \vz@xmin=\pgf@x\fi
+  \ifdim\pgf@y<\vz@ymin \vz@ymin=\pgf@y\fi
+  \ifdim\pgf@x>\vz@xmax \vz@xmax=\pgf@x\fi
+  \ifdim\pgf@y>\vz@ymax \vz@ymax=\pgf@y\fi
+}
+\def\vz@dump#1#2{%
+  \vz@xmin=16000pt \vz@ymin=16000pt \vz@xmax=-16000pt \vz@ymax=-16000pt
+  % \pgfpointanchor returns local-frame coords (inverse-CM applied); recording
+  % must land absolute canvas coords so boxes stay correct inside pics/scopes
+  \pgfpointtransformed{\pgfpointanchor{#1}{south west}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{south east}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{north east}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{north west}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{north}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{south}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{east}}\vz@corner
+  \pgfpointtransformed{\pgfpointanchor{#1}{west}}\vz@corner
+  \immediate\write\vzauditfile{%
+    node #1 | \the\vz@xmin\space \the\vz@ymin\space \the\vz@xmax\space \the\vz@ymax\space | #2}%
+  \vz@ovrect{#1}%
+}
+
+% --- vaudit style -----------------------------------------------------------
+% append after command runs right after its own node's finish (per-node
+% smuggle), but \tikzlastnode is only trustworthy inside that window; \vz@want
+% records the definitive name at the node's own typeset time.
+\tikzset{
+  vz@count/.code={\global\advance\vz@req\@ne},
+  vaudit/.style={
+    vz@count,
+    execute at end node={\xdef\vz@want{\tikz@fig@name}},
+    append after command={\pgfextra{\vz@auditlast{#1}}},
+  },
+}
+\def\vz@auditlast#1{%
+  \global\advance\vz@got\@ne
+  \ifx\vz@want\pgfutil@empty
+    \ifdefined\tikzlastnode
+      % own node was unnamed (auto-named by mustbenamed) or the name capture
+      % missed: dump the freshest node rather than dropping the audit row
+      \vz@dump{\tikzlastnode}{#1}%
+    \else
+      \PackageWarning{vizaudit}{vaudit '#1': no node on this path; skipped}%
+    \fi
+  \else
+    \expandafter\vz@dump\expandafter{\vz@want}{#1}%
+  \fi
+  \global\let\vz@want\pgfutil@empty
+}
+
+% re-tag an existing node: use as \path \vaudit{name}{tags};
+% merge semantics live in check_audit.py (tag union; conflicts = ERR)
+\newcommand{\vaudit}[2]{\pgfextra{\vz@dump{#1}{#2}}}
+
+% --- regions ----------------------------------------------------------------
+% audit an unnamed axis-aligned region given by two corners; optional trailing
+% [tags] lets a region carry inside=/class=/adjacent= like a node
+\newcommand{\vzbbox}[3]{%
+  \path #2 coordinate (vz@a) #3 coordinate (vz@b);%
+  \@ifnextchar[{\vz@bbox{#1}}{\vz@bbox{#1}[]}%
+}
+\def\vz@bbox#1[#2]{%
+  \pgfextra{%
+    \pgfextractx{\pgf@xa}{\pgfpointtransformed{\pgfpointanchor{vz@a}{center}}}%
+    \pgfextracty{\pgf@ya}{\pgfpointtransformed{\pgfpointanchor{vz@a}{center}}}%
+    \pgfextractx{\pgf@xb}{\pgfpointtransformed{\pgfpointanchor{vz@b}{center}}}%
+    \pgfextracty{\pgf@yb}{\pgfpointtransformed{\pgfpointanchor{vz@b}{center}}}%
+    \immediate\write\vzauditfile{%
+      region #1 | \the\pgf@xa\space \the\pgf@ya\space \the\pgf@xb\space \the\pgf@yb\space | #2}%
+    \ifvzoverlay
+      \vz@xmin=\pgf@xa \vz@ymin=\pgf@ya
+      \vz@xmax=\pgf@xb \vz@ymax=\pgf@yb
+      \vz@ovrect{#1}%
+    \fi
+  }%
+}
+
+% --- wires ------------------------------------------------------------------
+% \vzwire{NAME}{p1;p2;...}{endpoint=A,B via=C} dumps one audit line:
+%   wire NAME | x1 y1 x2 y2 ... | endpoint=A,B via=C
+% Waypoints resolve through \tikz@scan@one@point, so node names (A), anchored
+% names (A.north) and bare coordinates ((1,2)) all work. Scanned points sit in
+% the caller's local frame; the current CM is applied before recording, so the
+% audit line always holds absolute canvas coords (wires inside pics/shifted
+% scopes land where the ink actually is). Dispatch is on the
+% first non-space char: a leading paren passes the raw text through untouched
+% (spaces inside stay, so "axis cs:" and "($...$)" calc both work); anything
+% else is treated as a bare node name and gets all spaces zapped + parens.
+\def\vz@stop{\vz@stop}
+\def\vz@nil{\vz@nil}
+\def\vz@wpt#1#2{\expandafter\vz@wptx#2\vz@nil{#1}}
+\def\vz@wptx#1#2\vz@nil#3{%
+  \ifx(#1% paren-led waypoint: scan the RAW text — interior spaces are
+        % significant (axis cs:, calc), and the pgf scanner skips edge
+        % spaces itself via \pgfutil@ifnextchar
+    \tikz@scan@one@point\pgf@process#3%
+  \else% bare name / name.anchor: spaces never legal — zap all and wrap
+    \tikz@scan@one@point\pgf@process(#1#2)%
+  \fi
+}
+\def\vz@empty{}
+\def\vz@wireloop#1;{%
+  \def\vz@a{#1}%
+  \ifx\vz@a\vz@stop
+  \else
+    \edef\vz@tmp{\zap@space#1 \@empty}%
+    \ifx\vz@tmp\vz@empty% stray ;; / trailing ; / all-space segment — skip
+    \else
+      \vz@wpt{#1}{\vz@tmp}%
+      % scanned point sits in the caller's local frame — apply the current CM
+      % so the audit line records absolute canvas coords (pics/scopes included)
+      \pgfpointtransformed{\pgfqpoint{\pgf@x}{\pgf@y}}%
+      \xdef\vz@wirecoords{\vz@wirecoords\space\the\pgf@x\space\the\pgf@y}%
+      \xdef\vz@wirepts{\vz@wirepts{\the\pgf@x}{\the\pgf@y}}%
+    \fi
+    \expandafter\vz@wireloop
+  \fi
+}
+\newcommand{\vzwire}[3]{%
+  \path \pgfextra{%
+    \begingroup
+    \def\vz@wirecoords{}%
+    \def\vz@wirepts{}%
+    \vz@wireloop#2;\vz@stop;%
+    \immediate\write\vzauditfile{wire #1 |\vz@wirecoords\space | #3}%
+    \vz@ovwire
+    \endgroup
+  };%
+}
+\makeatother

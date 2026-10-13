@@ -1,102 +1,53 @@
-# Installing agent-basic-skill for Codex
+# Installing agent-basic-skill
 
-Enable this skill bundle in Codex via native skill discovery. Clone the repo and symlink its `skills/` directory.
+Install each active skill directly under the shared `~/.agents/skills/<name>/` directory. The new skills use this layout for dependency checks and calls between skills.
 
 ## Prerequisites
 
 - Git
-- Python 3.11+ if you plan to use the optional managed installer
+- Python 3.11+
 
 ## Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/WncFht/agent-basic-skill.git ~/.codex/agent-basic-skill
-   ```
-
-2. **Create the skills symlink:**
-   ```bash
-   mkdir -p ~/.agents/skills
-   ln -s ~/.codex/agent-basic-skill/skills ~/.agents/skills/agent-basic-skill
-   ```
-
-   **Windows (PowerShell):**
-   ```powershell
-   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents\skills"
-   cmd /c mklink /J "$env:USERPROFILE\.agents\skills\agent-basic-skill" "$env:USERPROFILE\.codex\agent-basic-skill\skills"
-   ```
-
-3. **Restart Codex** (quit and relaunch the CLI) so it discovers the bundle.
-
-4. **Optional: sync bundled local agents into Codex:**
-   ```bash
-   mkdir -p ~/.codex/agents
-   rsync -a ~/.codex/agent-basic-skill/agents/ ~/.codex/agents/
-   ```
-
-   This repo ships reusable local agent profiles such as `code-mapper`,
-   `docs-researcher`, `browser-debugger`, `reviewer`, `search-specialist`,
-   `frontend-developer`, `refactoring-specialist`, `explorer`, `worker`, and
-   `shell-script-expert`.
-
-## Optional Managed Install
-
-If you want managed copies under `~/.codex/skills` instead of, or in addition to, native discovery, run the repo installer:
+Clone the repository, then install the complete active bundle:
 
 ```bash
-cd ~/.codex/agent-basic-skill
-python scripts/install_skill.py memory-skill
-python scripts/install_skill.py paper-note-skill plot-skill report-download
+git clone https://github.com/WncFht/agent-basic-skill.git ~/src/agent-basic-skill
+cd ~/src/agent-basic-skill
+python scripts/install_skill.py memory-skill paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management --dest-root ~/.agents/skills
 ```
 
-This installer replaces `~/.codex/skills/<skill-name>` with the current repo copy.
+The installer replaces each named destination directory. Save local changes before updating. If these skills already exist in `~/.agents/skills`, update only the ones you intend to replace. Avoid installing duplicate copies under `~/.codex/skills`.
 
-## Migrating from Older Copies
+Installation copies instructions, scripts, templates, references and bundled assets. It does not install external tools, virtual environments or ASR models. Follow each skill's `SKILL.md` and `deps.toml` to set up dependencies. Restart the agent session to refresh its skill list.
 
-If you previously copied individual skills into `~/.codex/skills`, native discovery through `~/.agents/skills/agent-basic-skill` is now the preferred bundle-level install.
-
-If the same skill exists both in the symlinked bundle and in `~/.codex/skills`, remove stale duplicates when practical so future sessions do not pick up an unexpected old copy.
-
-## Verify
-
-Check that native discovery points to the bundle:
+Optional local agent profiles for Codex:
 
 ```bash
-ls -la ~/.agents/skills/agent-basic-skill
-```
-
-You should see a symlink or junction pointing to `~/.codex/agent-basic-skill/skills`.
-
-Check that the bundled skills exist:
-
-```bash
-ls ~/.agents/skills/agent-basic-skill
-```
-
-Expected entries: `memory-skill`, `paper-note-skill`, `plot-skill`, `report-download`.
-
-If you synced local agents, verify one of them too:
-
-```bash
-test -f ~/.codex/agents/code-mapper.toml && echo OK
+mkdir -p ~/.codex/agents
+rsync -a agents/ ~/.codex/agents/
 ```
 
 ## Updating
 
 ```bash
-cd ~/.codex/agent-basic-skill && git pull
+cd ~/src/agent-basic-skill
+git pull --ff-only
+python scripts/install_skill.py asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management --dest-root ~/.agents/skills
 ```
 
-The symlinked bundle updates immediately after the pull. Restart Codex if the current session has already cached the old skill list.
+The installer retains `$CODEX_HOME/skills` as its default destination for compatibility; explicitly pass `--dest-root` for the shared layout.
 
-## Uninstalling
+## Archived skills
+
+`plot-skill` and `report-download` are preserved under `vendor/`. They are excluded from the active bundle and cannot be installed by name with the installer. Use `figure-viz` for chart work.
+
+Older installations may have a bundle symlink at `~/.agents/skills/agent-basic-skill`. Remove that symlink after verifying the direct installations, so each skill has one active entry. Previously installed copies of retired skills are not removed automatically.
+
+## Verify
 
 ```bash
-rm ~/.agents/skills/agent-basic-skill
-```
-
-Optionally delete the clone:
-
-```bash
-rm -rf ~/.codex/agent-basic-skill
+test -f ~/.agents/skills/asr/SKILL.md
+test -f ~/.agents/skills/figure-viz/agents/openai.yaml
+test -f ~/.agents/skills/link-get/scripts/link-get
 ```

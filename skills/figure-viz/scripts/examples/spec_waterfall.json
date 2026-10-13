@@ -1,0 +1,93 @@
+{
+    "version": 1,
+    "theme": "accent",
+    "rc": {
+        "font": "serif",
+        "base": 7.6
+    },
+    "size": {
+        "slot": "half",
+        "height": 1.8
+    },
+    "data": {
+        "wf": [
+            {
+                "stage": "k=1",
+                "base": 0,
+                "d": 38.4
+            },
+            {
+                "stage": "k=2",
+                "base": 38.4,
+                "d": 8.7
+            },
+            {
+                "stage": "k=4",
+                "base": 47.1,
+                "d": 5.9
+            },
+            {
+                "stage": "k=8",
+                "base": 53.0,
+                "d": 3.8
+            },
+            {
+                "stage": "k=16",
+                "base": 56.8,
+                "d": 2.2
+            },
+            {
+                "stage": "final",
+                "base": 0,
+                "d": 59.0
+            }
+        ]
+    },
+    "meta": {
+        "ledger": "waterfall: y=增量 d、bottom=run-in 累计 base——浮动柱（final 为 bottom=0 的合计柱）；connect 画相邻柱间隙的 run-out 虚线（图例经显式 handle 条目声明幽灵样式）；labels mode:'delta' 标带符号增量",
+        "caption": "pass@k gain decomposition by stage"
+    },
+    "title": "pass@k waterfall",
+    "xaxis": {
+        "label": "stage"
+    },
+    "yaxis": {
+        "label": "pass@k (%)",
+        "lim": [0, 70]
+    },
+    "grid": "y-only",
+    "series": [
+        {
+            "kind": "bar",
+            "from": "wf",
+            "x": "stage",
+            "y": "d",
+            "bottom": "base",
+            "width": 0.55,
+            "color": "vteal",
+            "connect": {
+                "label": "running total"
+            },
+            "labels": {
+                "mode": "delta",
+                "fontsize": 5.8
+            }
+        }
+    ],
+    "legend": {
+        "loc": "upper left",
+        "fontsize": 5.8,
+        "entries": [
+            {
+                "handle": {
+                    "label": "running total",
+                    "color": "vgray",
+                    "ls": "--"
+                }
+            }
+        ]
+    },
+    "output": {
+        "path": "spec_waterfall.png"
+    }
+}

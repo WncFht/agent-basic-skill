@@ -1,0 +1,85 @@
+# bilibili pack — subs/opus fetcher (monolith wrap of bilibili-get) + bili_mint
+# meta-lane（--mint → kind=mint → refresh-cookies.sh bilibili 臂重铸 cookie）。
+#
+# mint 用独立 kind 词而非 canvas 式 kind=enum：enum 在 canvas 是真实枚举面
+# （courses/files/announcements/assignments 多数据臂共用一个选择参），bilibili
+# 只有铸凭证这一个 meta 操作——注册 enum 是假装有不存在的枚举面。kind=mint
+# 让「重铸」在 routes 层结构性独占（kinds=["mint"]→bili_mint 唯一臂），永
+# 不落进真抓取臂（实测陷阱：mint 请求静默跑 fetch）。
+cred_domain = "bili"    # BBDown.data/BILI_SESSDATA → lgc bili 域（内含 bili-fallback 退化）
+writes_cred = "bili"    # bili_mint 铸 cookies/bilibili.txt + BBDown.data 回本 cred 域
+
+[pack]
+name = "bilibili"
+abi = 1
+ns = "link-get"
+kinds = ["subs", "opus", "mint"]
+desc = "元数据 + 字幕（`all,-danmaku`）→ BBDown AI 字幕兜底；`/opus`、`t.*` 走 polymer API → md；`--mint` 重铸 bili 凭证"
+
+[match]
+hosts = ["bilibili.com", "*.bilibili.com", "b23.tv", "*.b23.tv"]
+schemes = ["http", "https"]
+
+[params]
+mint = { type = "bool", desc = "--mint：fht-mba Chrome 重铸 bili cookie（壳映射 kind=mint → bili_mint meta-lane；裸 --param mint 由 routes 兜底臂同锁）" }
+
+[identity]
+# mint 键常量 bili:meta:mint：bili:meta: 前缀 → lgc kind_of=bili:meta →
+# cred_domain=bili——auth 类 lane 账绑 cred8 指纹，cookie 轮换即自愈（remint
+# 不被旧账锁死）。铸凭证是全局操作不按 URL：常量键 = single-flight 归并 +
+# 永不合内容键撞车（data 终态不入库 → 内容探测恒 miss → 不可能被供陈旧物）。
+# 注：不设 {mint} 键槽——lgc 的 _bili_id_p 归一器会把任何含 BV+pN 的 subs 键
+# 收编回 BV:pN（后缀被剥），槽位在归一层失效反而误导读者；兜底靠 routes
+# mint=true 臂 + bilibili-get params_gate 双闸（见下注）。
+keyexpr = { default = "bili:subs:{bvid}:p{part}", opus = "bili:opus:{did}", mint = "bili:meta:mint" }
+# opus 词边界收紧 + path 匹配面：'?next=/opus/1'、'mopus' 类 substring 注入
+# 不造 kind；t.bilibili.com 走 netloc 段（path 面 = netloc+path 仍命中）
+kind_by_url = { opus = '(?:/opus(?:/|$)|t\.bilibili\.com)' }
+match_scope = "path"
+capture = { bvid = '(BV[A-Za-z0-9]+)', part = '[?&]p=([0-9]+)', did = '([0-9]{10,})' }
+capture_query = ["part"]   # 分 P 号在 query——path 面剥了会多 P 坍 p1
+capture_defaults = { part = "1" }
+# b23.tv 等无 BV 的 URL → 捕获落空 → 回退 "subs:{url}" 每 URL 键；
+# connector 内部会解析 b23→BV，Phase 3 resolve lane 上线后键收敛
+
+[[lanes]]
+name = "bilibili-get"
+exec = "monolith"
+connector = "../../scripts/connectors/bilibili-get"
+kinds = ["subs", "opus"]   # mint 永不进抓取臂（routes 已先行闸，此为双保险）
+params_gate = { mint = ["", "false", "0"] }   # 三保险：带 mint=true 的请求即使路由表被改坏也拒进 connector
+fail_note = false          # 单车道臂必设：transient→lane×key neg→cooling→dep_absent 死循环实锤陷阱
+needs = { tools = ["curl", "python3"], env = [], env_optional = ["LGC_WAIT"], creds = [] }
+egress = { hosts = ["*.bilibili.com", "b23.tv", "*.hdslb.com"], proxy = "optional" }
+budget_ms = 300000
+
+[[lanes]]
+name = "bili_mint"
+exec = "lanes/bili_mint.py"
+# 不设 lane 级 kinds：兜底臂把 subs/opus+mint=true 的流量也送进来，kinds
+# 闸会在 admit 把它掐死成 dep_absent——选择子是 routes，lane 内还有
+# kind!=mint && !params.mint → rc10 自保闸（错路由进来的正常流量不真铸）
+writes_cred = "bili"       # meta-lane：唯一可写 artifact_dir 外（cred store 指定路径，lane-abi §8）
+fail_note = false          # 同上：mint 失败不记 lane×key——remint 是修复路径不是 hammer
+needs = { tools = ["ssh", "scp"], env = [], env_optional = ["COOKIE_HOST", "REFRESH_COOKIES"], creds = [] }
+egress = { hosts = ["fht-mba", "api.bilibili.com"], proxy = "off" }
+budget_ms = 180000
+
+[[routes]]
+kinds = ["mint"]           # kind 覆盖（壳 --mint → kind=mint）→ 只进 meta-lane
+lanes = ["bili_mint"]
+
+[[routes]]
+# 裸 --param mint（无 kind 覆盖）兜底：同样锁 bili_mint——残留边沿是请求键
+# 仍是 subs/opus 内容键，同 URL 已存条目时探测会 hit 供缓存（不再跑抓取，
+# 无害降级）；kind=mint 正道恒定 bili:meta:mint 键无此问题
+params = { mint = true }
+lanes = ["bili_mint"]
+
+[[routes]]
+kinds = ["subs", "opus"]
+lanes = ["bilibili-get"]
+
+[monolith]
+argv = ["{url}", "-o", "{artifact_dir}"]
+flag_params = { refresh = "--refresh" }

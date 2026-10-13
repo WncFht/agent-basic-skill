@@ -1,0 +1,309 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": { "font": "serif", "base": 7.6 },
+    "size": { "slot": "full", "height": 1.9 },
+    "colors": {
+        "registries": {
+            "arm": { "frozen": "vblue", "liveB": "vcoral", "liveA": "vviolet" },
+            "root": { "true": "vgreen", "false": "vorange" }
+        },
+        "ramps": {
+            "top1": { "0.3": "#6BAED6", "0.5": "#3182BD", "0.9": "#08306B" }
+        },
+        "extend": { "ghost": "#6E7378" }
+    },
+    "data": {
+        "traj": [
+            { "arm": "frozen", "t": 0, "kl": 0.42 },
+            { "arm": "frozen", "t": 1, "kl": 0.31 },
+            { "arm": "frozen", "t": 2, "kl": 0.27 },
+            { "arm": "liveB", "t": 0, "kl": 0.42 },
+            { "arm": "liveB", "t": 1, "kl": 0.29 },
+            { "arm": "liveB", "t": 2, "kl": 0.24 },
+            { "arm": "liveA", "t": 0, "kl": 0.42 },
+            { "arm": "liveA", "t": 1, "kl": 0.33 },
+            { "arm": "liveA", "t": 2, "kl": 0.3 }
+        ],
+        "grid": [
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.3,
+                "K": 8,
+                "med": 0.41,
+                "q25": 0.36,
+                "q75": 0.47,
+                "surr": 0.44,
+                "exact": 0.4
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.3,
+                "K": 32,
+                "med": 0.3,
+                "q25": 0.26,
+                "q75": 0.35,
+                "surr": 0.33,
+                "exact": 0.4
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.3,
+                "K": 64,
+                "med": 0.26,
+                "q25": 0.22,
+                "q75": 0.3,
+                "surr": 0.29,
+                "exact": 0.4
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.5,
+                "K": 8,
+                "med": 0.55,
+                "q25": 0.49,
+                "q75": 0.62,
+                "surr": 0.6,
+                "exact": 0.53
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.5,
+                "K": 32,
+                "med": 0.42,
+                "q25": 0.37,
+                "q75": 0.48,
+                "surr": 0.47,
+                "exact": 0.53
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.5,
+                "K": 64,
+                "med": 0.36,
+                "q25": 0.31,
+                "q75": 0.42,
+                "surr": 0.41,
+                "exact": 0.53
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.9,
+                "K": 8,
+                "med": 0.78,
+                "q25": 0.7,
+                "q75": 0.87,
+                "surr": 0.86,
+                "exact": 0.75
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.9,
+                "K": 32,
+                "med": 0.63,
+                "q25": 0.56,
+                "q75": 0.71,
+                "surr": 0.7,
+                "exact": 0.75
+            },
+            {
+                "L": 8,
+                "arm": "true",
+                "level": 0.9,
+                "K": 64,
+                "med": 0.55,
+                "q25": 0.49,
+                "q75": 0.62,
+                "surr": 0.61,
+                "exact": 0.75
+            }
+        ],
+        "scan": [
+            { "cmax": 0.11, "m0": 0.94, "arm": "frozen" },
+            { "cmax": 0.18, "m0": 1.02, "arm": "frozen" },
+            { "cmax": 0.26, "m0": 1.08, "arm": "liveB" },
+            { "cmax": 0.33, "m0": 1.05, "arm": "liveB" },
+            { "cmax": 0.41, "m0": 0.97, "arm": "liveA" },
+            { "cmax": 0.48, "m0": 0.93, "arm": "liveA" },
+            { "cmax": 0.55, "m0": 0.99, "arm": "liveA" }
+        ]
+    },
+    "meta": {
+        "ledger": "a: line=arm 的 KL 轨迹 + ref exact floor；b: line=median KL + band iqr + pred surrogate + ref exact；c: scatter=(cmax,m0) 按 arm 分色 + ref m0=1 + note",
+        "caption": "anchor alignment, KL landscape and existence boundary"
+    },
+    "layout": {
+        "kind": "grid",
+        "shape": [1, 3],
+        "cells": [["a", "b", "c"]],
+        "tags": true
+    },
+    "panels": {
+        "a": {
+            "title": "aligned anchor",
+            "xaxis": { "label": "step ($\\times 10^{5}$)" },
+            "yaxis": { "label": "$\\mathrm{KL}(T\\Vert p)$" },
+            "grid": "y-only",
+            "series": [
+                {
+                    "kind": "line",
+                    "id": "traj",
+                    "from": "traj",
+                    "by": "arm",
+                    "x": "t",
+                    "y": "kl",
+                    "color": "arm",
+                    "lw": 1.2,
+                    "label": {
+                        "frozen": "frozen ($\\beta$)",
+                        "liveB": "live ($\\beta{+}1$)",
+                        "liveA": "live ($\\beta{+}2$)"
+                    }
+                },
+                {
+                    "kind": "ref",
+                    "dir": "h",
+                    "at": 0.28,
+                    "ls": ":",
+                    "color": "arm:liveB",
+                    "label": "pure-$W_0$ point"
+                }
+            ],
+            "legend": { "loc": "upper right", "fontsize": 5.6 }
+        },
+        "b": {
+            "title": "frozen anchor, $L=8$",
+            "xaxis": {
+                "label": "$K$",
+                "scale": "log",
+                "ticks": [8, 32, 64],
+                "tick_labels": "ticks",
+                "minor": "off"
+            },
+            "yaxis": {
+                "label": "median $\\mathrm{KL}(p\\Vert T)$",
+                "scale": "log"
+            },
+            "grid": "y-only",
+            "series": [
+                {
+                    "id": "m",
+                    "kind": "line",
+                    "from": "grid",
+                    "where": { "L": 8, "arm": "true" },
+                    "by": "level",
+                    "x": "K",
+                    "y": "med",
+                    "color": { "ramp": "top1" },
+                    "marker": "o",
+                    "ms": 3,
+                    "label": "$\\max_v q_v={level}$"
+                },
+                {
+                    "kind": "band",
+                    "of": "m",
+                    "lo": "q25",
+                    "hi": "q75",
+                    "semantics": "iqr"
+                },
+                {
+                    "kind": "pred",
+                    "of": "m",
+                    "y": "surr",
+                    "ls": "--",
+                    "marker": "x",
+                    "legend": false
+                },
+                {
+                    "kind": "ref",
+                    "dir": "h",
+                    "of": "m",
+                    "at": "exact",
+                    "ls": ":"
+                }
+            ]
+        },
+        "c": {
+            "title": "existence boundary by arm",
+            "xaxis": { "label": "$c_{\\max}$" },
+            "yaxis": { "label": "$M_0(\\tau_{\\min})$" },
+            "grid": "y-only",
+            "series": [
+                {
+                    "kind": "scatter",
+                    "from": "scan",
+                    "by": "arm",
+                    "x": "cmax",
+                    "y": "m0",
+                    "color": "arm",
+                    "marker": { "frozen": "o", "liveB": "s", "liveA": "^" },
+                    "s": 12,
+                    "alpha": 0.9,
+                    "label": {
+                        "frozen": "frozen",
+                        "liveB": "live $\\beta{+}1$",
+                        "liveA": "live $\\beta{+}2$"
+                    }
+                },
+                {
+                    "kind": "ref",
+                    "dir": "h",
+                    "at": 1,
+                    "color": "vink",
+                    "ls": "--"
+                },
+                {
+                    "kind": "note",
+                    "at": [0.03, 1],
+                    "units": ["axes", "data"],
+                    "text": "$M_0 = 1$",
+                    "props": { "va": "bottom", "fontsize": 6.2 }
+                }
+            ],
+            "legend": { "loc": "upper right", "fontsize": 5.6 }
+        }
+    },
+    "legend": {
+        "where": "below",
+        "ncol": 6,
+        "fontsize": 5.8,
+        "columnspacing": 0.7,
+        "handletextpad": 0.4,
+        "entries": [
+            { "group": "m", "label": "$\\max_v q_v={level}$" },
+            {
+                "handle": {
+                    "label": "measured",
+                    "color": "ghost",
+                    "ls": "-",
+                    "marker": "o"
+                }
+            },
+            {
+                "handle": {
+                    "label": "surrogate",
+                    "color": "ghost",
+                    "ls": "--",
+                    "marker": "x"
+                }
+            },
+            { "handle": { "label": "exact", "color": "ghost", "ls": ":" } }
+        ]
+    },
+    "arrange": { "engine": "tight", "rect": [0, 0.09, 1, 1] },
+    "output": {
+        "path": "spec_multipanel.png",
+        "formats": ["png", "svg", "pdf"],
+        "dpi": 300,
+        "bbox": null,
+        "pad": 0.015
+    }
+}

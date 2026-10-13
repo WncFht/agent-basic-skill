@@ -1,0 +1,2 @@
+# Preserve matplotlib's generated SVG path whitespace in imported examples.
+skills/figure-viz/scripts/examples/*.svg -whitespace

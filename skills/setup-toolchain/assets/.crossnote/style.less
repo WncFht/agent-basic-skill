@@ -1,0 +1,3437 @@
+/*******************************************************************************
+ * Markdown Preview Enhanced (VS Code Extension)
+ *
+ * To customize the style:
+ *  - Run command: `Markdown Preview Enhanced: Customize CSS`
+ *  - This opens the `style.less` file where you can override existing styles
+ *  - Default file location:
+ *    - Windows: `%USERPROFILE%/.crossnote/style.less`
+ *
+ * For more information, visit:
+ *  - https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css
+ ******************************************************************************/
+/*******************************************************************************
+ * Custom Theme for Markdown Preview Enhanced
+ *  - Author: midvok
+ *  - Update: 2026-06-24
+ *  - URL: https://github.com/midvok/markdown-preview-theme
+ *
+ * Custom classes for the markdown front-matter:
+ *  `sans`, `serif`, `mono`   Override the document font family
+ *  `fs12px` .. `fs18px`      Override the document font size
+ *  `[no]centerimg`           Toggle image centering
+ *  `[no]centertable`         Toggle table centering
+ *  `[no]colorhead`           Toggle colorful headings
+ *  `headnum-h1`              Add heading numbering (starting from H1)
+ *  `headnum[-h2]`            Add heading numbering (starting from H2)
+ *  `wrapcode`                Wrap long lines in code blocks
+ *  `simple-table`            Apply simplified table styling
+ *  `[x|y|xy|no]line-table`   Control which internal borders appear in tables
+ *  `nohead-table`            Hide the table header row
+ *  `dense-table `            Reduce table cell padding
+ *  `readable`/`wide`/`fullwidth`  Content column width (~68ch / ~107ch / unlimited)
+ *  `justify`                Justify body text (with auto hyphenation)
+ *  `lh15`/`lh17`/`lh2`      Override line height (1.5 / 1.7 / 2.0)
+ *  `bold`                   Heavier body font weight (500/700)
+ *  `invertimg`              Invert images on dark slots (light figures on dark paper)
+ *
+ * Utility classes for print style:
+ *  `page-break`      Enforce a page break before an element
+ *  `no-break`        Prevent an element from being split across pages
+ *  `keep-with-next`  Prevent an element from being separated from the following block
+ *
+ * Utility classes for layout control:
+ *  `cols-[n]`           Create a **multi-column** layout with `n` columns (up to 10)
+ *  `cols-rule`          Add vertical divider lines between columns
+ *  `nomark-list`        Remove list item markers
+ *  `grid-cols-[n]`      Create a **CSS grid** layout with `n` columns
+ *  `grid-cols-auto`     Create a **CSS grid** layout with `auto-fit` columns
+ *  `flex`               Apply a **Flexbox** container to child elements
+ *  `float-[left|right]` Allow to wrap text around images set to float left or right
+ ******************************************************************************/
+// 槽位变量注册为 <color>：未注册的 custom property 切换时只能跳变，
+// 注册后 body 上的 transition 才能对 var 派生值做插值动画。
+// initial-value 取 paper 槽展开后的字面量，与下方 :root 默认一致。
+@property --bg-primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f5f1e8;
+}
+@property --text-normal {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #211b12;
+}
+@property --bg-secondary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #eae6dd; // ≈ color-mix(#f5f1e8 95%, #211b12)
+}
+@property --border-normal {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c8c4bb; // ≈ color-mix(#f5f1e8 79%, #211b12)
+}
+
+// Comment this line to disable the whole theme
+#enable-theme();
+
+// Custom classes that you can specify in the markdown front-matter
+#custom-classes();
+
+// Extra utility classes for Markdown content
+#markdown-utility-classes();
+
+// Select base text font family
+// {sans, serif, mono}
+@base-font: serif;
+
+// Import web fonts if they are not installed on your system
+// {true, false}
+// 关掉后不再向 fonts.googleapis.com 发 ~10 条渲染阻塞的 @import ——
+// 冷首开/刷新在无代理网络下会卡在 connect-timeout；本机有 Noto/DejaVu
+// 字体栈兜底，外观差异仅限西文正文字形。Material Symbols 图标仍走
+// #import-icons()（callout/TOC 图标依赖它，不在此开关内）。
+@import-fonts: false;
+
+// Toggle colorful headings
+// {true, false}
+@colorful-headings: true;
+
+// Automatic heading numbering
+// {true, false}
+@heading-numbering: false;
+
+// Limit the depth of the sidebar TOC tree
+// {1..6}
+@toc-depth: 3;
+
+// Enable ellipsis overflow for long TOC items
+// {true, false}
+@toc-ellipsis: false;
+
+// Zoom images on image click (alternative to "Enable Image Lightbox" in MPE settings)
+// {true, false}
+@click-to-zoom: false;
+
+#enable-theme() {
+  /* === Setup Icons & Fonts === */
+  #import-icons();
+  #import-fonts(@base-font);
+  :root {
+    #set-fonts(@base-font);
+  }
+  #apply-body-root-fonts();
+
+  /* === Theme Colors — Zotero/texlate 槽位色板 === */
+  // Each named slot is a {bg, fg} pair; all surface/text/border vars are
+  // derived via color-mix at texlate's fixed ratios (pdfTheme.ts
+  // paletteChromeVars, ADR-0020), so chrome can never mismatch the paper.
+  // theme-toggle.js writes body[data-xnote-theme] = system|editor|<slot>:
+  //   system / absent → prefers-color-scheme decides paper vs 暖黑
+  //                     (scripts off or pre-boot land here too);
+  //   editor          → MPE's .markdown-preview.editor-dark tag 决定;
+  //   <slot>          → that palette, locked — 不听 OS.
+  // Vars live on <body> so the TOC sidebar and other out-of-preview UI
+  // inherit the same palette; :root carries `paper` as the default.
+  // `@media screen` keeps print/export on the paper palette in `:root`.
+  :root {
+    --radius-small: 3px;
+    --radius-medium: 6px;
+    --radius-large: 6px;
+    #paper-slot-light(#f5f1e8, #211b12); // paper 暖纸
+  }
+  // A slot owns the whole viewport, not just the preview box — otherwise
+  // short notes strip below it and the surround fights the paper.
+  body {
+    background-color: var(--bg-primary);
+    // @property 注册后 var 派生值可插值：切槽/OS 明暗翻转平滑过渡。
+    // 注意只覆盖继承 color 的元素；.markdown-preview 自带 color 声明，
+    // 其文字过渡在 #style--base-text 里补。
+    transition:
+      background-color 0.25s ease,
+      color 0.25s ease;
+  }
+  @media screen {
+    // 槽位只挂 --_slot-bg/--_slot-fg 两颗种子，明暗两套派生 var 组各发
+    // 一遍共享（mixin 直接收 var() 实参，color-mix 在元素本地解析种子）
+    // ——不再每个槽位整组展开。paper/editor-light/system-light 继承
+    // :root 的字面量，无需 body 覆盖。
+    body[data-xnote-theme="sepia"] {
+      --_slot-bg: #f4ecd8; // 羊皮纸
+      --_slot-fg: #5b4636;
+    }
+    body[data-xnote-theme="snow"] {
+      --_slot-bg: #eceff4; // 雪白 (Zotero snow)
+      --_slot-fg: #3b4252;
+    }
+    body[data-xnote-theme="sepia"],
+    body[data-xnote-theme="snow"] {
+      #paper-slot-light(var(--_slot-bg), var(--_slot-fg));
+    }
+    // 暖黑 — texlate dark slot; also the editor-dark / OS-dark resolution.
+    body[data-xnote-theme="dark"],
+    body[data-xnote-theme="editor"]:has(.markdown-preview.editor-dark) {
+      --_slot-bg: #17140f;
+      --_slot-fg: #e6ddcb;
+    }
+    body[data-xnote-theme="onedark"] {
+      --_slot-bg: #282c34; // One Dark Pro
+      --_slot-fg: #abb2bf;
+    }
+    body[data-xnote-theme="black"] {
+      --_slot-bg: #000000; // 纯黑
+      --_slot-fg: #ffffff;
+    }
+    body[data-xnote-theme="dark"],
+    body[data-xnote-theme="onedark"],
+    body[data-xnote-theme="black"],
+    body[data-xnote-theme="editor"]:has(.markdown-preview.editor-dark) {
+      #paper-slot-dark(var(--_slot-bg), var(--_slot-fg));
+    }
+    // system/未设槽 → 跟随 OS：嵌套媒体查询经 LESS bubbling 产
+    // `@media screen and (prefers-color-scheme: dark)`（切勿再写 screen，
+    // 会拼成 `screen and screen`），导出 HTML/浏览器 serve 同样随 OS 明暗，
+    // 不再依赖 MPE 在 webview 里打的 system-dark 标签。
+    @media (prefers-color-scheme: dark) {
+      body:is(:not([data-xnote-theme]), [data-xnote-theme="system"]) {
+        --_slot-bg: #17140f;
+        --_slot-fg: #e6ddcb;
+        #paper-slot-dark(var(--_slot-bg), var(--_slot-fg));
+      }
+    }
+    // color-scheme drives native bits (scrollbars, form controls) — it must
+    // track the RESOLVED palette, so a forced light slot under a dark OS
+    // doesn't leave them dark.
+    body[data-xnote-theme="dark"],
+    body[data-xnote-theme="onedark"],
+    body[data-xnote-theme="black"],
+    body[data-xnote-theme="editor"]:has(.markdown-preview.editor-dark) {
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      body:is(:not([data-xnote-theme]), [data-xnote-theme="system"]) {
+        color-scheme: dark;
+      }
+    }
+    body[data-xnote-theme="paper"],
+    body[data-xnote-theme="sepia"],
+    body[data-xnote-theme="snow"],
+    // editor 亮侧同样是强制亮解析（解析回 :root paper 暖纸）——dark OS 下
+    // 原生控件/滚动条不能留在暗色，与上面三个亮槽同规则。
+    body[data-xnote-theme="editor"]:has(.markdown-preview.editor-light) {
+      color-scheme: light;
+    }
+    // 暗槽图片调光（Zotero 做法）：白底截图/插图在暗纸上刺眼，统一压暗；
+    // 选择器组与上面 color-scheme 同形，覆盖全部暗槽解析结果
+    body[data-xnote-theme="dark"],
+    body[data-xnote-theme="onedark"],
+    body[data-xnote-theme="black"],
+    body[data-xnote-theme="editor"]:has(.markdown-preview.editor-dark) {
+      .markdown-preview img,
+      .markdown-preview svg {
+        filter: brightness(0.85);
+      }
+      // invertimg（front-matter 类，仅暗槽生效）：黑底示意图反色回亮——
+      // 反相后借 screen 混合把黑底融进暗纸，等效白底图的观感
+      .markdown-preview.invertimg img {
+        filter: invert(0.92) hue-rotate(180deg);
+        mix-blend-mode: screen;
+      }
+      // 灯箱放大查看时还原原图，不压不反（同特异性靠后取胜）
+      .mpe-lightbox-overlay img {
+        filter: none;
+      }
+    }
+    @media (prefers-color-scheme: dark) {
+      body:is(:not([data-xnote-theme]), [data-xnote-theme="system"]) {
+        .markdown-preview img,
+        .markdown-preview svg {
+          filter: brightness(0.85);
+        }
+        .markdown-preview.invertimg img {
+          filter: invert(0.92) hue-rotate(180deg);
+          mix-blend-mode: screen;
+        }
+        .mpe-lightbox-overlay img {
+          filter: none;
+        }
+      }
+    }
+    // Viewport 滚动条长在 <html> 上，body 的槽位 var 对它不可见 —— 逐槽
+    // 照 #paper-slot-* 里 --border-bold 的公式写死 color-mix thumb，
+    // track 用各槽 bg hex。
+    // editor 亮侧解析回 paper：viewport 滚动条跟着用同一组 thumb/track。
+    html:has(> body[data-xnote-theme="paper"]),
+    html:has(> body[data-xnote-theme="editor"]:has(.markdown-preview.editor-light)) {
+      scrollbar-color: color-mix(in srgb, #f5f1e8 66%, #211b12) #f5f1e8;
+    }
+    html:has(> body[data-xnote-theme="sepia"]) {
+      scrollbar-color: color-mix(in srgb, #f4ecd8 66%, #5b4636) #f4ecd8;
+    }
+    html:has(> body[data-xnote-theme="snow"]) {
+      scrollbar-color: color-mix(in srgb, #eceff4 66%, #3b4252) #eceff4;
+    }
+    html:has(> body[data-xnote-theme="dark"]),
+    html:has(> body[data-xnote-theme="editor"]:has(.markdown-preview.editor-dark)) {
+      scrollbar-color: color-mix(in srgb, #17140f 62%, #e6ddcb) #17140f;
+    }
+    html:has(> body[data-xnote-theme="onedark"]) {
+      scrollbar-color: color-mix(in srgb, #282c34 62%, #abb2bf) #282c34;
+    }
+    html:has(> body[data-xnote-theme="black"]) {
+      scrollbar-color: color-mix(in srgb, #000000 62%, #ffffff) #000000;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:has(> body:is(:not([data-xnote-theme]), [data-xnote-theme="system"])) {
+        scrollbar-color: color-mix(in srgb, #17140f 62%, #e6ddcb) #17140f;
+      }
+    }
+  }
+
+  /* === Override Markdown Preview === */
+  .markdown-preview.markdown-preview {
+    #apply-base-fonts();
+    #apply-code-fonts();
+    #apply-syntax-colors();
+
+    // Preview style
+    #style--base-text();
+    #style--lists();
+    #style--images();
+    #style--math();
+    #style--code-blocks();
+    #style--pseudocode();
+    #style--blockquotes();
+    #style--callouts();
+    #style--tables();
+    #style--footnotes();
+
+    // Extra styles
+    #extra--table-styles();
+    #extra--colorful-headings();
+    #extra--dividers();
+    #extra--heading-numbering();
+  }
+
+  /* === Print Style === */
+  #print-style();
+
+  /* === Override Extension UI === */
+  #image-popup();
+  #override-ui();
+  #override-toc(@toc-depth, @toc-ellipsis);
+
+  /* === HTML Export === */
+  #html-export();
+}
+
+//==============================================================================
+// Custom classes that you can specify in the markdown front-matter:
+// ---
+// class: "serif headnum nocolorhead"
+// ---
+// These classes are appended to the `markdown-preview` container.
+//==============================================================================
+#custom-classes() {
+  /* === Custom Classes === */
+  .markdown-preview.markdown-preview {
+    // === Set font family ===
+    &.sans {
+      #set-sans-family(@sans-font);
+    }
+    &.serif {
+      #set-serif-family(@serif-font);
+    }
+    &.mono {
+      #set-mono-family(@mono-font);
+    }
+
+    // === Set font size ===
+    &.fs12px {
+      .set-font-size(12px);
+    }
+    &.fs13px {
+      .set-font-size(13px);
+    }
+    &.fs14px {
+      .set-font-size(14px);
+    }
+    &.fs15px {
+      .set-font-size(15px);
+    }
+    &.fs16px {
+      .set-font-size(16px);
+    }
+    &.fs17px {
+      .set-font-size(17px);
+    }
+    &.fs18px {
+      .set-font-size(18px);
+    }
+    .set-font-size(@fs) {
+      --font-size: @fs;
+      --code-font-size: 0.9285714286em;
+    }
+
+    // === Align tables ===
+    &.centertable {
+      table {
+        display: table;
+        width: auto;
+        margin-inline: auto;
+      }
+    }
+    &.nocentertable {
+      table {
+        width: auto;
+        margin-inline: 0;
+      }
+    }
+
+    // === Align images ===
+    &.centerimg {
+      img {
+        display: block;
+        // 完整 shorthand：p img{margin:0} 会补进 margin-block:0，只写
+        // margin-inline 段中图会丢纵向呼吸位
+        margin: 1rem auto;
+      }
+    }
+    &.nocenterimg {
+      // 独占段图选择器 p:has(> img:only-child) > img（0-3-3）特异性高于
+      // &.nocenterimg img（0-3-1），必须展开同级选择器才压得住
+      img,
+      p:has(> img:only-child) > img,
+      div > img:only-child {
+        margin-inline: 0;
+      }
+    }
+
+    // === Colorful Headings ===
+    &.colorhead {
+      #heading-colors(true);
+      #dividers(true);
+    }
+    &.nocolorhead {
+      #heading-colors(false);
+      #dividers(false);
+    }
+
+    // === Heading numbering ===
+    &.headnum-h1 {
+      #heading-numbering(1);
+    }
+    &.headnum,
+    &.headnum-h2 {
+      #heading-numbering(2);
+    }
+
+    // === Wrap code boxes ===
+    &.wrapcode {
+      pre {
+        // pre-wrap 保留缩进（pre-line 会塌缩行首空白），anywhere 兜底超长 token
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    }
+
+    // === 版式：栏宽 / 两端对齐 / 行距 / 字重 ===
+    // readable 38em ≈ 68ch（14px 衬线下），接近学术排版 measure
+    &.readable {
+      max-width: 38em;
+      margin-inline: auto;
+    }
+    &.wide {
+      max-width: 58em;
+      margin-inline: auto;
+    }
+    &.fullwidth {
+      max-width: none;
+    }
+    &.justify {
+      p {
+        text-align: justify;
+        text-justify: inter-word;
+        hyphens: auto;
+      }
+    }
+    // 行距/字重走 CSS 变量——槽位 mixin 已消费 --line-height 与
+    // --font-weight[-bold]，类只改变量值即可级联到正文
+    &.lh15 {
+      --line-height: 1.5;
+    }
+    &.lh17 {
+      --line-height: 1.7;
+    }
+    &.lh2 {
+      --line-height: 2;
+    }
+    &.bold {
+      --font-weight: 500;
+      --font-weight-bold: 700;
+    }
+
+    // === Table styles ===
+    #extra--table-styles(~"&");
+  }
+}
+
+//==============================================================================
+// Extra utility classes for Markdown content
+//==============================================================================
+#markdown-utility-classes() {
+  .markdown-preview.markdown-preview {
+    #column-layout();
+    #grid-layout();
+    #flex-layout();
+    #image-float();
+  }
+}
+
+// === Column Layout ===
+#column-layout() {
+  each(range(10), {
+    .cols-@{value} {
+      column-count: @value;
+    }
+  });
+
+  [class^="cols-"],
+  [class*=" cols-"],
+  [style*="column-count"] {
+    margin-block: 1rem 2rem;
+    column-gap: 1.5rem;
+
+    > :first-child {
+      margin-top: 0;
+    }
+    > ul > li:first-child {
+      margin-top: 0;
+    }
+    ul {
+      margin: 0;
+    }
+    img {
+      margin-block: 0 1rem;
+    }
+  }
+
+  .cols-rule {
+    column-rule: 1px dashed var(--border-divider);
+  }
+  .cols-rule.nomark-list {
+    column-gap: 1rem;
+  }
+}
+
+// === Grid Layout ===
+#grid-layout() {
+  each(range(10), {
+    .grid-cols-@{value} {
+      grid-template-columns: ~"repeat(@{value}, 1fr)";
+    }
+  });
+
+  .grid-cols-auto {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  [class^="grid-cols"],
+  [class*=" grid-cols"] {
+    display: grid;
+    align-items: start;
+    justify-items: start;
+
+    gap: 0 1.5rem;
+    margin: 0.5rem 0 2rem;
+
+    :is(h1, h2, h3, h4, h5, h6):first-child {
+      margin-block: 0.5rem;
+    }
+    p,
+    p + p {
+      margin-block: 0.5rem;
+    }
+    img {
+      margin-block: 0 0.5rem;
+    }
+    table {
+      margin-block: 0.75rem 1rem;
+    }
+  }
+}
+
+// === Flex Layout ===
+#flex-layout() {
+  [class^="flex"],
+  [class*=" flex"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+
+    gap: 1rem 1.5rem;
+    margin: 0.5rem 0 2rem;
+
+    :is(h1, h2, h3, h4, h5, h6):first-child {
+      margin-block: 0.5rem;
+    }
+    p,
+    p + p {
+      margin-block: 0.5rem;
+    }
+    table {
+      margin-block: 0.5rem 0;
+    }
+  }
+}
+
+// === Image Float ===
+#image-float() {
+  .float-left,
+  .float-right {
+    margin-block: 0 0.5em;
+    max-width: 40%;
+  }
+  .float-left {
+    float: left;
+    margin-inline: 0 1.5em;
+  }
+  .float-right {
+    float: right;
+    margin-inline: 1.5em 0;
+  }
+}
+
+//==============================================================================
+// ~~~ Import Icons ~~~
+// "Material Icons":
+//  - url("https://fonts.googleapis.com/icon?family=Material+Icons")
+//  - Problems with vertical alignment
+//
+// "Material Symbols Outlined":
+//  - Vertical alignment works fine
+//==============================================================================
+#import-icons() {
+  @import (css) url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0");
+
+  :root {
+    --icon-font-family: "Material Symbols Outlined";
+  }
+}
+
+//==============================================================================
+// ~~~ Setup Fonts ~~~
+// Sans-serif fonts:
+//  - MS: "Segoe Ui", Calibri
+//  - Free: "Noto Sans", "Open Sans", "Google Sans", "Source Sans 3",
+//    "IBM Plex Sans", "Public Sans", Nunito, Inter, Lato, Mulish, Roboto, Rubik
+//
+// Serif fonts:
+//  - MS: Cambria, "Times New Roman"
+//  - Free: "Noto Serif", "PT Serif"
+//
+// Monospaced fonts:
+//  - "Courier Prime", "DejaVu Sans Mono", "Fira Code", "JetBrains Mono",
+//    "Monaspace Neon", "Noto Sans Mono", Cascadia, Hack
+//==============================================================================
+// === Import Fonts ===
+#import-url(@font-url) when (@import-fonts=true) {
+  @import (css) url(@font-url);
+}
+
+// === Set Fonts ===
+#set-fonts(@family) when (@family=sans) {
+  #set-sans-family(@sans-font);
+}
+#set-fonts(@family) when (@family=serif) {
+  #set-serif-family(@serif-font);
+}
+#set-fonts(@family) when (@family=mono) {
+  #set-mono-family(@mono-font);
+}
+
+//==============================================================================
+// ~~~ Sans Fonts ~~~
+//==============================================================================
+// @sans-font: "Google Sans";
+// @sans-font: "IBM Plex Sans";
+// @sans-font: "Inter"; // **
+// @sans-font: "Mulish";
+// @sans-font: "Noto Sans";
+// @sans-font: "Nunito Sans";
+@sans-font: "Public Sans"; // ****
+// @sans-font: "Roboto"; // ***
+// @sans-font: "Source Sans 3"; // ****
+
+#import-family(@family) when (@family="Google Sans") {
+  // opsz@17 is the "text" font version for Google Sans
+  #import-url("https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17,400..700;1,17,400..700&display=swap");
+  #import-family("JetBrains Mono");
+}
+#import-family(@family) when (@family="IBM Plex Sans") {
+  #import-url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap");
+  #import-family("Courier Prime");
+}
+#import-family(@family) when (@family="Inter") {
+  #import-url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+  #import-family("JetBrains Mono");
+}
+#import-family(@family) when (@family="Mulish") {
+  #import-url("https://fonts.googleapis.com/css2?family=Mulish:ital,wght@0,200..1000;1,200..1000&display=swap");
+  #import-family("JetBrains Mono");
+}
+#import-family(@family) when (@family="Noto Sans") {
+  #import-url("https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap");
+  #import-family("Courier Prime");
+}
+#import-family(@family) when (@family="Nunito Sans") {
+  #import-url("https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap");
+  #import-family("Courier Prime");
+}
+#import-family(@family) when (@family="Public Sans") {
+  #import-url("https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,100..900;1,100..900&display=swap");
+  #import-family("JetBrains Mono");
+}
+#import-family(@family) when (@family="Roboto") {
+  #import-url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
+  #import-family("JetBrains Mono");
+}
+#import-family(@family) when (@family="Source Sans 3") {
+  #import-url("https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap");
+  #import-family("JetBrains Mono");
+}
+
+#import-fonts(@family) when (@family=sans) {
+  #import-family(@sans-font);
+}
+
+#set-sans-family(@font) when (@font="Google Sans") {
+  --font-family: "Google Sans", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 15px;
+  --ui-font-size: 14px;
+  --line-height: 1.6;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.8666666667em;
+}
+#set-sans-family(@font) when (@font="IBM Plex Sans") {
+  --font-family: "IBM Plex Sans", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.5;
+  --font-weight: 400;
+  --font-weight-bold: 500;
+  --font-weight-heading: 600;
+  #code-font("Courier Prime");
+  --code-inline-font-size: 0.9285714286em;
+  --code-inline-align: 0.03em;
+}
+#set-sans-family(@font) when (@font="Inter") {
+  --font-family: Inter, "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.7;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.9285714286em;
+}
+#set-sans-family(@font) when (@font="Mulish") {
+  --font-family: Mulish, "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.7;
+  --font-weight: 400;
+  --font-weight-bold: 700;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.8928571429em;
+}
+#set-sans-family(@font) when (@font="Noto Sans") {
+  --font-family: "Noto Sans", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("Courier Prime");
+  --code-inline-font-size: 0.95em;
+  --code-inline-align: 0.03em;
+}
+#set-sans-family(@font) when (@font="Nunito Sans") {
+  --font-family: "Nunito Sans", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 700;
+  #code-font("Courier Prime");
+  --code-inline-font-size: 0.95em;
+  --code-inline-align: 0.03em;
+}
+#set-sans-family(@font) when (@font="Public Sans") {
+  --font-family: "Public Sans", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.8928571429em;
+}
+#set-sans-family(@font) when (@font="Roboto") {
+  --font-family: Roboto, "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.8928571429em;
+}
+#set-sans-family(@font) when (@font="Source Sans 3") {
+  --font-family: "Source Sans 3", "Segoe UI", Calibri, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size: 15px;
+  --ui-font-size: 14px;
+  --line-height: 1.6;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 0.8333333333em;
+}
+
+//==============================================================================
+// ~~~ Serif Fonts ~~~
+//==============================================================================
+// @serif-font: "Noto Serif";
+@serif-font: "PT Serif";
+
+#import-family(@family) when (@family="Noto Serif") {
+  #import-url("https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap");
+}
+#import-family(@family) when (@family="PT Serif") {
+  #import-url("https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700&display=swap");
+}
+#import-fonts(@family) when (@family=serif) {
+  #import-family(@serif-font);
+  #import-family("Courier Prime");
+}
+
+#set-serif-family(@font) when (@font="Noto Serif") {
+  --font-family: "Noto Serif", Cambria, "Times New Roman", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", SimSun, serif;
+  --font-size: 14px;
+  --ui-font-size: 13.5px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+
+  #code-font("Courier Prime");
+  --code-inline-font-size: 0.95em;
+  --code-inline-align: 0.04em;
+}
+#set-serif-family(@font) when (@font="PT Serif") {
+  --font-family: "PT Serif", Cambria, "Times New Roman", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", SimSun, serif;
+  --font-size: 14px;
+  --ui-font-size: 14px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+
+  #code-font("Courier Prime");
+  --code-inline-font-size: 0.9285714286em;
+  --code-inline-align: 0.04em;
+}
+
+//==============================================================================
+// ~~~ Mono Fonts ~~~
+//==============================================================================
+// @mono-font: "Cascadia Code"; // ***
+// @mono-font: "Courier Prime";
+// @mono-font: "DejaVu Mono";
+// @mono-font: "Fira Code"; // ****
+// @mono-font: "Hack";
+@mono-font: "JetBrains Mono"; // ****
+// @mono-font: "Monaspace Neon"; // ****
+// @mono-font: "Noto Sans Mono"; // ***
+
+#import-fonts(@family) when (@family=mono) {
+  #import-family(@mono-font);
+}
+
+#set-mono-family(@font) when (@font="Cascadia Code") {
+  --font-family: "Cascadia Code", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.769230769;
+  --font-weight: 400;
+  --font-weight-bold: 700;
+  #code-font("Cascadia Code");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="Courier Prime") {
+  --font-family: "DejaVu Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.769230769;
+  --font-weight: 400;
+  --font-weight-bold: 700;
+  #code-font("Courier Prime");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="DejaVu Mono") {
+  --font-family: "DejaVu Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.769230769;
+  --font-weight: 400;
+  --font-weight-bold: 700;
+  #code-font("DejaVu Mono");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="Fira Code") {
+  --font-family: "Fira Code", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.692307692;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("Fira Code");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="Hack") {
+  --font-family: "Hack", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.75;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("Hack");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="JetBrains Mono") {
+  --font-family: "JetBrains Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.769230769;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("JetBrains Mono");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="Monaspace Neon") {
+  --font-family: "Monaspace Neon", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 12px;
+  --ui-font-size: 12px;
+  --line-height: 1.75;
+  --font-weight: 300;
+  --font-weight-bold: 600;
+  #code-font("Monaspace Neon");
+  --code-inline-font-size: 1em;
+}
+#set-mono-family(@font) when (@font="Noto Sans Mono") {
+  --font-family: "Noto Sans Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --font-size: 13px;
+  --ui-font-size: 13px;
+  --line-height: 1.692307692;
+  --font-weight: 400;
+  --font-weight-bold: 600;
+  #code-font("Noto Sans Mono");
+  --code-inline-font-size: 1em;
+}
+
+//==============================================================================
+// ~~~ Code Fonts ~~~
+//==============================================================================
+#import-family(@family) when (@family="Cascadia Code") {
+  #import-url("https://fonts.googleapis.com/css2?family=Cascadia+Code:ital,wght@0,200..700;1,200..700&display=swap");
+}
+#import-family(@family) when (@family="Courier Prime") {
+  #import-url("https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap");
+}
+#import-family(@family) when (@family="DejaVu Mono") {
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-mono@5.2.5/400.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-mono@5.2.5/400-italic.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-mono@5.2.5/700.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-mono@5.2.5/700-italic.min.css");
+}
+#import-family(@family) when (@family="Fira Code") {
+  #import-url("https://cdn.jsdelivr.net/npm/firacode@6.2.0/distr/fira_code.css");
+}
+#import-family(@family) when (@family="Hack") {
+  #import-url("https://cdnjs.cloudflare.com/ajax/libs/hack-font/3.3.0/web/hack.min.css");
+}
+#import-family(@family) when (@family="JetBrains Mono") {
+  #import-url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap");
+}
+#import-family(@family) when (@family="Monaspace Neon") {
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/300.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/300-italic.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/400.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/400-italic.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/600.min.css");
+  #import-url("https://cdn.jsdelivr.net/npm/@fontsource/monaspace-neon@5.2.5/600-italic.min.css");
+}
+#import-family(@family) when (@family="Noto Sans Mono") {
+  #import-url("https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@100..900&display=swap");
+}
+
+#code-font(@font) when (@font="Cascadia Code") {
+  --code-font-family: "Cascadia Code", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.692307692;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+#code-font(@font) when (@font="Courier Prime") {
+  --code-font-family: "Courier Prime", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.5;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+#code-font(@font) when (@font="DejaVu Mono") {
+  --code-font-family: "DejaVu Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.5;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+#code-font(@font) when (@font="Fira Code") {
+  --code-font-family: "Fira Code", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.692307692;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+  // font-variant-ligatures: none;
+}
+#code-font(@font) when (@font="Hack") {
+  --code-font-family: Hack, Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.66;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+#code-font(@font) when (@font="JetBrains Mono") {
+  --code-font-family: "JetBrains Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.692307692;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+#code-font(@font) when (@font="Monaspace Neon") {
+  --code-font-family: "Monaspace Neon", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 12px;
+  --code-line-height: 1.75;
+  --code-font-weight: 300;
+  --code-font-weight-bold: 300;
+}
+#code-font(@font) when (@font="Noto Sans Mono") {
+  --code-font-family: "Noto Sans Mono", Consolas, "Noto Sans Mono CJK SC", "Noto Sans CJK SC", monospace;
+  --code-font-size: 13px;
+  --code-line-height: 1.692307692;
+  --code-font-weight: 400;
+  --code-font-weight-bold: 400;
+}
+
+//==============================================================================
+// Apply Font Variables
+//==============================================================================
+#apply-body-root-fonts() {
+  :root {
+    // Root font-size defines the 1rem unit!
+    font-size: var(--font-size);
+  }
+  html > body {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    line-height: var(--line-height);
+    letter-spacing: var(--letter-spacing, normal);
+    font-weight: var(--font-weight, 400);
+    .calc-heading-sizes();
+  }
+}
+
+#apply-base-fonts() {
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  letter-spacing: var(--letter-spacing, normal);
+  font-weight: var(--font-weight, 400);
+}
+
+#apply-code-fonts() {
+  // All monospaced elements
+  code,
+  tt,
+  pre {
+    font-family: var(--code-font-family);
+    line-height: var(--code-line-height);
+    letter-spacing: var(--code-letter-spacing, normal);
+    font-weight: var(--code-font-weight);
+    font-style: normal;
+  }
+  // Inline code
+  code,
+  tt {
+    font-size: var(--code-inline-font-size, 1em);
+  }
+  // Code blocks
+  pre,
+  pre > code {
+    font-size: var(--code-font-size);
+  }
+}
+
+// === Calc Heading Font Sizes ===
+.calc-heading-sizes() {
+  ._calc(@i) {
+    .calc-quadratic-fs(@i, 1em, 1.5em, @N: 5, @b: 0.05);
+  }
+  --h1-size: 2em;
+  --h2-size: ._calc(5)[@result];
+  --h3-size: ._calc(4)[@result];
+  --h4-size: ._calc(3)[@result];
+  --h5-size: ._calc(2)[@result];
+  --h6-size: ._calc(1)[@result];
+}
+
+//==============================================================================
+// Theme Colors — Zotero/texlate 槽位色板
+//
+// Each slot is a {bg, fg} pair; every surface/text/border var derives via
+// color-mix at texlate's fixed ratios (pdfTheme.ts paletteChromeVars,
+// ADR-0020) — chrome can never mismatch the paper. Accent and code-syntax
+// colors come in light/dark sets picked by slot class.
+// texlate semantic accents: cinnabar #b23a1f/#d45b41 · pine #2f6f4f/#63a884
+// · ochre #a67c00/#cfa226 — blue/purple/magenta have no counterpart there,
+// the tuned hues are kept.
+//==============================================================================
+#accents-light() {
+  --color-red: #b23a1f; // texlate cinnabar
+  --color-yellow: #856500; // ochre 加深——亮槽正文对比度 3.2-3.4 → 4.6-4.8
+  --color-green: #2f6f4f; // texlate pine
+  --color-blue: #095acc;
+  --color-purple: #a417c0;
+  --color-magenta: #c00b66;
+  // 与 Obsidian/Flexoki 对齐：orange/cyan 取 600 档，pink 复用 magenta
+  --color-orange: #bc5215;
+  --color-cyan: #24837b;
+  --color-pink: var(--color-magenta);
+
+  --link-color: var(--color-blue);
+  --link-hover-color: #0b46bb;
+}
+#accents-dark() {
+  // 按 onedark #282c34 实测对比度再提亮（yellow #cfa226 已达标不动）
+  --color-red: #dd7f6b; // cinnabar 提亮
+  --color-yellow: #cfa226; // ochre
+  --color-green: #6aac89; // pine 提亮
+  --color-blue: #699ecb; // flexoki blue-400 提亮——无 texlate 对应
+  --color-purple: #9e93d1; // 提亮
+  --color-magenta: #d77cab; // 提亮
+  // 与 Obsidian/Flexoki 对齐：orange/cyan 取 400 档，pink 复用 magenta
+  --color-orange: #da702c;
+  --color-cyan: #3aa99f;
+  --color-pink: var(--color-magenta);
+
+  --link-color: var(--color-blue);
+  --link-hover-color: #66a5da;
+}
+
+#code-syntax-light() {
+  --code-red: #a02715; // ≈ cinnabar-deep — keeps token contrast on paper
+  --code-yellow: var(--color-yellow); // ochre
+  --code-green: var(--color-green); // pine
+  --code-blue-dark: #0909a0;
+  --code-blue: var(--color-blue);
+  --code-purple: #a20bc0;
+  --code-magenta: #bb124b;
+
+  --code-comment: #61656b;
+  --code-operator: #565a60;
+
+  --code-class: var(--text-normal);
+  --code-namespace: var(--code-purple);
+  --code-keyword: var(--code-blue-dark);
+  --code-builtin: var(--code-magenta);
+  --code-function: var(--color-blue);
+  --code-decorator: var(--code-yellow);
+  --code-directive: var(--code-yellow);
+
+  --code-constant: var(--code-magenta);
+  --code-number: var(--code-yellow);
+  --code-string: var(--code-green);
+
+  --code-tag-name: var(--code-purple);
+  --code-attr-name: var(--code-yellow);
+  --code-attr-value: var(--code-red);
+}
+#code-syntax-dark() {
+  --code-red: var(--color-red);
+  --code-yellow: var(--color-yellow);
+  --code-green: var(--color-green);
+  --code-blue-dark: #66a5da; // airier counterpart of light --code-blue-dark
+  --code-blue: var(--color-blue);
+  --code-purple: var(--color-purple); // 原 var(--code-purple) 自引用，CSS 判 invalid 静默丢弃
+  --code-magenta: var(--color-magenta);
+
+  --code-comment: #9d9b92;
+  --code-operator: #a8a69e;
+
+  --code-class: var(--text-normal);
+  --code-namespace: var(--code-purple);
+  --code-keyword: var(--code-blue-dark);
+  --code-builtin: var(--code-magenta);
+  --code-function: var(--color-blue);
+  --code-decorator: var(--code-yellow);
+  --code-directive: var(--code-yellow);
+
+  --code-constant: var(--code-magenta);
+  --code-number: var(--code-yellow);
+  --code-string: var(--code-green);
+
+  --code-tag-name: var(--code-purple);
+  --code-attr-name: var(--code-yellow);
+  --code-attr-value: var(--code-red);
+}
+
+// Light slot derivation — texlate ratios: paper-2 ≈ 5% fg, panel = 80%
+// white, line ≈ 11% fg, line-strong ≈ 21% fg; faint/bold interpolate beyond
+// texlate's two border tiers (they only have line + line-strong). Text
+// tiers deviate from texlate's ink-2 = 66% / ink-3 = 56%: measured contrast
+// fell below WCAG (sepia slot muted 3.31, faint 2.67), so muted = 78% fg,
+// faint = 63% fg.
+#paper-slot-light(@bg, @fg) {
+  // === Backgrounds ===
+  --bg-primary: @bg;
+  --bg-secondary: color-mix(in srgb, @bg 95%, @fg);
+  --bg-panel: color-mix(in srgb, #ffffff 80%, @bg);
+
+  // === Borders ===
+  --border-faint: color-mix(in srgb, @bg 94%, @fg);
+  --border-muted: color-mix(in srgb, @bg 89%, @fg);
+  --border-normal: color-mix(in srgb, @bg 79%, @fg);
+  --border-bold: color-mix(in srgb, @bg 66%, @fg);
+  --border-divider: var(--border-muted);
+  --border-button: var(--border-bold);
+
+  // === Shadow ===
+  // 浮层投影用固定黑而非 @fg：暗槽墨色浅，投影必须仍是黑才压得住
+  --shadow-pop: color-mix(in srgb, #000 25%, transparent);
+
+  // === Table ===
+  --table-border: var(--border-normal);
+  --table-border-strong: var(--border-bold);
+  --table-header-bg: color-mix(in srgb, @fg 8%, transparent);
+  --table-bg: inherit;
+  --table-bg-alt: inherit;
+  --table-hover-bg: color-mix(in srgb, var(--color-yellow) 30%, transparent);
+
+  // === Text ===
+  --text-normal: @fg;
+  --text-muted: color-mix(in srgb, @fg 78%, @bg);
+  --text-faint: color-mix(in srgb, @fg 63%, @bg);
+
+  --selection: color-mix(in srgb, var(--color-red) 18%, transparent);
+  // yellow 加深后降到 35%，补偿 sepia 槽 mark 内文字对比度回退
+  --text-mark-bg: color-mix(in srgb, var(--color-yellow) 35%, transparent);
+
+  #accents-light();
+
+  // === Code ===
+  --code-inline-bg: color-mix(in srgb, @fg 8%, transparent);
+  // 90%：与 muted 78% 拉开层次（kbd 复用此变量，无独立 --kbd-fg）
+  --code-inline-fg: color-mix(in srgb, @fg 90%, @bg);
+  --code-bg: var(--bg-secondary);
+  --code-fg: var(--text-normal);
+  --code-gutter-fg: var(--text-faint);
+  --code-on-tint-bg: color-mix(in srgb, @fg 8%, transparent);
+  #code-syntax-light();
+}
+
+// Dark slot derivation — texlate ratios: paper-2 ≈ 4% fg, panel ≈ 7% fg,
+// line ≈ 17% fg, line-strong ≈ 26% fg. Text tiers deviate from texlate's
+// ink-2 = 70% / ink-3 = 57% for the same measured-contrast reason as light:
+// muted = 78% fg, faint = 63% fg.
+#paper-slot-dark(@bg, @fg) {
+  --bg-primary: @bg;
+  --bg-secondary: color-mix(in srgb, @bg 96%, @fg);
+  --bg-panel: color-mix(in srgb, @bg 93%, @fg);
+
+  --border-faint: color-mix(in srgb, @bg 91%, @fg);
+  --border-muted: color-mix(in srgb, @bg 83%, @fg);
+  --border-normal: color-mix(in srgb, @bg 74%, @fg);
+  --border-bold: color-mix(in srgb, @bg 62%, @fg);
+  --border-divider: var(--border-muted);
+  --border-button: var(--border-bold);
+
+  // === Shadow ===
+  --shadow-pop: color-mix(in srgb, #000 60%, transparent);
+
+  --table-border: var(--border-normal);
+  --table-border-strong: var(--border-bold);
+  --table-header-bg: color-mix(in srgb, @fg 10%, transparent);
+  --table-bg: inherit;
+  --table-bg-alt: inherit;
+  --table-hover-bg: color-mix(in srgb, var(--color-yellow) 18%, transparent);
+
+  --text-normal: @fg;
+  --text-muted: color-mix(in srgb, @fg 78%, @bg);
+  --text-faint: color-mix(in srgb, @fg 63%, @bg);
+
+  --selection: color-mix(in srgb, var(--color-red) 18%, transparent);
+  // 35% → 20%：onedark 深槽 mark 内文字对比度达标
+  --text-mark-bg: color-mix(in srgb, var(--color-yellow) 20%, transparent);
+
+  #accents-dark();
+
+  --code-inline-bg: color-mix(in srgb, @fg 10%, transparent);
+  // 90%：与 muted 78% 拉开层次（kbd 复用此变量）
+  --code-inline-fg: color-mix(in srgb, @fg 90%, @bg);
+  --code-bg: var(--bg-secondary);
+  --code-fg: var(--text-normal);
+  --code-gutter-fg: var(--text-faint);
+  --code-on-tint-bg: color-mix(in srgb, @fg 8%, transparent);
+  #code-syntax-dark();
+
+  // Callout body text uses accent + this lightness shift (._callout-colors).
+  // Light slots darken by default for contrast on paper; dark accents are
+  // already lifted but callout 正文/title 对比度仍只有 4.2-4.5，+16 提到 ≥4.54。
+  --callout-text-shift: 16;
+}
+
+//==============================================================================
+// Define Print Style
+//==============================================================================
+#print-style() {
+  // Utility classes for print layout
+  //
+  // .page-break
+  //   Enforces a page break before an element.
+  //   Usage:
+  //     <div class="page-break"></div>
+  //     ### Heading {.page-break}
+  //
+  // .no-break
+  //   Prevents the element from being split across pages.
+  //
+  // .keep-with-next
+  //   Prevents an element from being separated from the following block.
+  @media print {
+    .pagebreak,
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+      margin-top: 0 !important;
+      margin-block-start: 0 !important;
+
+      // Remove top margin from the first heading after the break
+      + :is(h1, h2, h3, h4, h5, h6) {
+        margin-top: 0.5rem !important;
+        margin-block-start: 0 !important;
+      }
+    }
+
+    .nobreak,
+    .no-break {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .keep-with-next {
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    // === Avoid page breaks ===
+    // 粒度收到行级：ul/ol/table 的容器级 avoid 会把长列表/长表整块推去
+    // 下一页留大片空白——改为 li/tr 行内不断 + thead 跨页重复表头 +
+    // orphans/widows；容器级 avoid 只留给不可拆整体的
+    // pre/figure/blockquote/callout。
+    pre,
+    figure,
+    blockquote,
+    .callout,
+    img {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    li,
+    tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    // 跨页表格每页重复表头
+    thead {
+      display: table-header-group;
+    }
+
+    p,
+    li {
+      orphans: 3;
+      widows: 3;
+    }
+
+    // Avoid page breaks after headings
+    :is(h1, h2, h3, h4, h5, h6) {
+      break-inside: avoid;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    // === Expand collapsed <details> for print ===
+    // Chromium ≥97 把折叠 details 的非 summary 子树渲染为
+    // content-visibility: hidden（保留 find-in-page 可搜）；新实现走
+    // ::details-content 槽——两条都写兼容新旧内核，作者级规则可覆盖 UA。
+    details:not([open]) > :not(summary),
+    details:not([open])::details-content {
+      content-visibility: visible;
+    }
+
+    // === Define Print Style ===
+    // Override theme variables
+    :root {
+      --bg-primary: transparent;
+      --bg-secondary: #f5f5f5;
+      --text-normal: #000;
+
+      --border-divider: #737373;
+      --border-button: #525252;
+      --table-border: #737373;
+      --table-border-strong: #000;
+
+      --code-fg: #000;
+      --code-font-size: 12px;
+    }
+
+    body {
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    .markdown-preview.markdown-preview {
+      padding: 2pt !important;
+
+      #dividers(false);
+    }
+  }
+
+  // `size: A4` wins only when Puppeteer runs with preferCSSPageSize: true;
+  // 浏览器/导出 HTML 的打印对话框仍可由用户覆盖。
+  @page {
+    size: A4;
+    margin: 20mm 16mm 18mm;
+
+    // 页码走 margin-box 计数器（不加 string-set 动态页眉——Chromium 不支持）
+    @bottom-center {
+      content: counter(page) " / " counter(pages);
+      font-size: 9pt;
+      color: #737373;
+    }
+  }
+}
+
+//==============================================================================
+// Syntax Colors
+//==============================================================================
+#apply-syntax-colors() {
+  .reset-style();
+  .set-custom-style();
+
+  // Reset the style introduced by the extension
+  .reset-style() {
+    pre,
+    code {
+      &[class*="language-"] {
+        color: var(--code-fg);
+      }
+      // 后代全是 Prism 的 .token/行号 span——标签过滤比 * 省掉每个元素
+      // 的祖先链检查；非 span 元素本来也没有主题样式需要复位。
+      &[class*="language-"] span {
+        background-color: inherit;
+        color: inherit;
+        font-weight: inherit;
+        font-size: inherit;
+      }
+    }
+  }
+
+  .set-custom-style() {
+    pre[class*="language-"],
+    code[class*="language-"] {
+      .token.operator,
+      .token.attr-equals {
+        color: var(--code-operator);
+        background: none;
+      }
+      .token.entity {
+        color: var(--code-operator);
+        background: none;
+      }
+      .token.punctuation {
+        color: var(--code-fg);
+        background: none;
+      }
+      .token.comment,
+      .token.doctype,
+      .token.triple-quoted-string,
+      .token.cdata,
+      .token.prolog {
+        color: var(--code-comment);
+        font-style: italic;
+      }
+      .token.url {
+        color: var(--code-blue);
+        background: none;
+      }
+      .token.content {
+        color: var(--code-fg);
+        background: none;
+      }
+      .token.namespace {
+        color: var(--code-namespace);
+        font-weight: var(--code-font-weight-bold);
+        opacity: 0.7;
+      }
+      .token.class-name {
+        color: var(--code-class);
+        font-weight: var(--code-font-weight-bold);
+        text-decoration: underline;
+      }
+      .token.macro,
+      .token.macro > .token.directive.keyword {
+        color: var(--code-directive);
+      }
+      .token.important,
+      .token.regex {
+        color: var(--code-directive);
+        font-weight: var(--code-font-weight-bold);
+      }
+      .token.parameter,
+      .token.variable {
+        color: var(--code-function);
+        font-style: italic;
+      }
+      .token.keyword {
+        color: var(--code-keyword);
+        font-weight: var(--code-font-weight-bold);
+      }
+      .token.function,
+      .token.function-name {
+        color: var(--code-function);
+        font-weight: var(--code-font-weight-bold);
+      }
+      .token.builtin,
+      .token.boolean {
+        color: var(--code-builtin);
+        font-weight: var(--code-font-weight-bold);
+        text-decoration: none;
+      }
+      .token.decorator {
+        color: var(--code-decorator);
+        font-style: italic;
+      }
+      .token.constant {
+        color: var(--code-constant);
+      }
+      .token.number {
+        color: var(--code-number);
+      }
+      .token.string,
+      .token.char {
+        color: var(--code-string);
+        font-style: normal;
+      }
+      .token.tag,
+      .token.tag > .token.punctuation {
+        color: var(--code-tag-name);
+        font-weight: var(--code-font-weight-bold);
+      }
+      .token.attr-name {
+        color: var(--code-attr-name);
+        font-style: italic;
+      }
+      .token.attr-value,
+      .token.attr-value > .token.punctuation {
+        color: var(--code-attr-value);
+        font-weight: var(--code-font-weight-bold);
+      }
+      // Markdown
+      .token.bold,
+      .token.bold *,
+      .token.title {
+        font-weight: 700;
+      }
+    }
+  }
+}
+
+//==============================================================================
+// Style Text
+//==============================================================================
+#style--base-text() {
+  // === Page Content ===
+  background-color: var(--bg-primary);
+  color: var(--text-normal);
+  // 与 body 同步过渡：preview 自带 color 声明，不靠继承吃 body 的动画
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+
+  ::selection {
+    background-color: var(--selection);
+  }
+
+  padding-inline: max(2rem, 30px) !important;
+  padding-top: max(2rem, 30px) !important;
+
+  // === Headings ===
+  :is(h1, h2, h3, h4, h5, h6) {
+    color: inherit;
+    line-height: 1.25;
+    clear: both;
+    // 多行标题按宽度均衡断行，避免末行孤词
+    text-wrap: balance;
+
+    padding: 0;
+    margin-bottom: 0.75rem;
+  }
+  :is(h2, h3, h4, h5, h6) {
+    font-weight: var(--font-weight-heading, var(--font-weight-bold, 700));
+  }
+  h1 {
+    font-size: var(--h1-size);
+    font-weight: 400;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+  }
+  h2 {
+    font-size: var(--h2-size);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+  }
+  h3 {
+    font-size: var(--h3-size);
+    margin-top: 2.25rem;
+  }
+  h4 {
+    font-size: var(--h4-size);
+    margin-top: 2rem;
+  }
+  h5 {
+    font-size: var(--h5-size);
+    margin-top: 1.75rem;
+  }
+  h6 {
+    font-size: var(--h6-size);
+    margin-top: 1.5rem;
+  }
+
+  // First headings on page
+  :is(h1, h2, h3, h4, h5, h6):first-child {
+    margin-top: 1.5rem;
+  }
+
+  // Consecutive headings
+  :is(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6) {
+    margin-top: 1.25rem;
+  }
+
+  // === Paragraphs ===
+  p {
+    margin-block: 0.75rem 0.5rem;
+    // pretty 只优化末行节奏（代价远低于 balance），抑制段末孤词
+    text-wrap: pretty;
+  }
+
+  // Consecutive paragraphs
+  p + p {
+    margin-top: 1rem;
+  }
+
+  // Links
+  a {
+    color: var(--link-color);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--link-hover-color);
+    text-decoration: underline;
+  }
+
+  // Bold
+  b,
+  strong {
+    font-weight: var(--font-weight-bold, 700);
+  }
+
+  // Italic
+  em,
+  em > strong {
+    font-style: italic;
+    color: var(--color-yellow);
+  }
+
+  // Strikethrough text
+  del,
+  s {
+    color: var(--text-faint);
+  }
+  // del 语义为「删除」：划线颜色单独上 accent 红，文字仍保持 faint
+  del {
+    text-decoration-color: var(--color-red);
+  }
+
+  // Text mark bg
+  mark {
+    background-color: var(--text-mark-bg);
+    border-radius: var(--radius-small);
+    padding: 1px 2px;
+  }
+
+  // === Inline Semantic Elements ===
+  // markdown-it 基本不产 ins/abbr，但内联 HTML 与 pandoc 导出会用到。
+  // kbd 已由 #style--code-blocks 提供完整按键样式——此处若重复书写，
+  // 同特异性下会被后 emit 的 code-blocks 规则整体压成死代码，故不重复。
+  ins {
+    color: var(--color-green);
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+  }
+  abbr[title] {
+    text-decoration: underline dotted;
+    cursor: help;
+  }
+  // line-height:0 防止上/下标撑大行距；脚注引用 sup.footnote-ref 同受此规则约束
+  sub,
+  sup {
+    line-height: 0;
+    font-size: 0.75em;
+  }
+
+  // === Form Controls ===
+  // 原生勾选框染色跟随 accent——任务列表等 checkbox 走浏览器原生渲染，
+  // 不染色会是系统灰蓝，与槽位 accent 脱节
+  input[type="checkbox"] {
+    accent-color: var(--color-blue);
+  }
+
+  // === Collapsible <details>（裸 details） ===
+  // 必须排除 .callout——折叠 callout（details.callout > summary.callout-title）
+  // 由 #style--callouts 全权负责；也要排除 .md-toc-details——内联 [TOC]
+  // 输出 details.md-toc-details 嵌套树，边框/缩进/加粗会把目录打花。
+  details:not(.callout, .md-toc-details) {
+    margin-block: 1rem;
+    padding-left: 0.8em;
+    border-left: 2px solid var(--border-muted);
+  }
+  details:not(.callout, .md-toc-details) > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+}
+
+//==============================================================================
+// Style Lists
+//==============================================================================
+#style--lists() {
+  // === Unordered/Ordered Lists ===
+  ul,
+  ol {
+    margin: 0.5rem 0 1rem;
+
+    // This ensures the list markers stay outside of floating images
+    display: flow-root;
+  }
+
+  // Nested lists
+  :is(ul, ol) :is(ul, ol) {
+    margin: 0.25rem 0 0;
+  }
+  :is(ul, ol) > li:has(> ul, > ol) {
+    margin-bottom: 0.5rem;
+  }
+
+  // List items
+  li {
+    &,
+    p {
+      margin-block: 0.25rem;
+    }
+    &::marker {
+      font-weight: var(--font-weight-bold);
+    }
+    &:first-of-type {
+      &,
+      p {
+        margin-top: 0;
+      }
+    }
+    &:last-of-type {
+      margin-bottom: 0;
+    }
+  }
+
+  ul {
+    padding-left: 2rem;
+    > li {
+      list-style-type: disc;
+      &::marker {
+        color: inherit;
+      }
+    }
+  }
+
+  ol {
+    padding-left: 2rem;
+    > li {
+      list-style-type: decimal;
+      padding-left: 0;
+      &::marker {
+        color: var(--text-faint);
+      }
+    }
+  }
+
+  // === Tasklist ===
+  li.task-list-item {
+    input.task-list-item-checkbox {
+      vertical-align: middle;
+      margin-top: 0;
+      margin-bottom: 0.2rem;
+      margin-left: -1.5rem;
+      margin-right: 0.25rem;
+    }
+  }
+
+  // === Description (Definition) Lists ===
+  dl {
+    padding: 0;
+    margin: 1rem 0 1rem;
+
+    dt {
+      color: var(--text-normal);
+      font-weight: var(--font-weight-bold, 700);
+      font-style: italic;
+
+      padding: 0;
+      margin: 0.75rem 0 0.25rem;
+    }
+
+    dd {
+      padding-left: 2rem;
+      margin: 0.25rem 0;
+    }
+  }
+
+  // === No-mark list ===
+  .nomark-list {
+    ul,
+    ol {
+      padding-left: 0.5rem;
+
+      > li {
+        list-style-type: none;
+      }
+    }
+    :is(ul, ol) :is(ul, ol) {
+      padding-left: 1rem;
+    }
+  }
+}
+
+//==============================================================================
+// Style Images
+//==============================================================================
+#style--images() {
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-medium);
+  }
+
+  // 段中插图默认行内（徽章/小图标不再被迫换行），负 vertical-align
+  // 让图略下沉对齐文本基线；独占一个 <p>/<div> 的图例外，按块级居中
+  p img {
+    display: inline;
+    vertical-align: -0.15em;
+    margin: 0;
+  }
+  // 块级居中覆盖面：独占段图、链接图 [![a](b)](c)、紧凑列表直挂图
+  // （markdown-it tight list 不产 <p>）、figure/td 直挂图
+  p:has(> img:only-child) > img,
+  p:has(> a:only-child > img:only-child) > a > img,
+  div > img:only-child,
+  li > img:only-child,
+  figure > img,
+  td > img {
+    display: block;
+    margin: 1rem auto;
+  }
+
+  #image-zoom-effect();
+}
+
+// Zoom image effect on single mouse click
+// - Alternative to "Enable Image Lightbox" feature (added in MPE 8.1.25)
+#image-zoom-effect() when (@click-to-zoom=true) {
+  @pad: 0;
+
+  img {
+    cursor: zoom-in;
+    position: relative;
+  }
+
+  img:active {
+    cursor: zoom-out;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+
+    max-width: calc(100% - 2 * @pad);
+    max-height: calc(100% - 2 * @pad);
+    height: auto;
+    width: auto;
+    object-fit: contain;
+
+    border-radius: 0;
+    padding: @pad;
+    margin: auto !important;
+
+    // Image background
+    background-color: #ddd;
+    .bg-checked-pattern();
+
+    // Shadow as viewport backdrop
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.8);
+  }
+}
+
+.bg-checked-pattern() {
+  background: repeating-conic-gradient(#f0f0f0 0% 25%, #ddd 0% 50%) 0 / 20px 20px;
+}
+
+// Style for "Enable Image Lightbox" feature (added in MPE 8.1.25)
+#image-popup() {
+  .mpe-lightbox-overlay img {
+    border-radius: 0 !important;
+    background-color: #ddd !important;
+    .bg-checked-pattern();
+  }
+}
+
+//==============================================================================
+// Style Math (Katex)
+//==============================================================================
+#style--math() {
+  .katex {
+    // 相对字号：跟随 --font-size 与 front-matter 字号类，不再钉死 16px
+    font-size: 1.15em;
+  }
+  .katex-display {
+    display: block;
+    margin: 1rem 0;
+    text-align: center;
+    // 超宽公式横向滚动而非裁切；padding-block 给上下笔画留呼吸位
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-block: 2px;
+
+    > .katex {
+      // 上游 bundled katex.min.css 置 display:block：max-content 宽度 +
+      // auto 边距使窄公式居中、超宽公式贴左缘从头可滚
+      // （否则 text-align:center 会把左缘推出视口）
+      width: max-content;
+      margin-inline: auto;
+    }
+  }
+
+  @media print {
+    // 打印无滚动条，恢复可见溢出避免公式被裁
+    .katex-display {
+      overflow: visible;
+    }
+  }
+}
+
+//==============================================================================
+// Style Code Blocks
+//==============================================================================
+#style--code-blocks() {
+  // === Keyboard Shortcuts <kbd> ===
+  // kbd 是短键位标签，nowrap 防拆；code/tt 允许换行——
+  // 长行内代码 nowrap 会把整行顶出版心（pre 内 code 由下方 inherit 收回）
+  kbd {
+    display: inline;
+    white-space: nowrap;
+
+    font-size: 0.95em;
+    font-weight: normal;
+    font-style: normal;
+    vertical-align: baseline;
+
+    background-color: var(--code-inline-bg);
+    color: var(--code-inline-fg);
+
+    border: 1px solid var(--border-button);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    box-shadow: none;
+
+    padding: 2px 5px;
+    margin: 0 1px;
+  }
+
+  // === Inline Code <code> ===
+  code,
+  tt {
+    display: inline;
+    white-space: normal;
+
+    background-color: var(--code-inline-bg);
+    color: var(--code-inline-fg);
+    vertical-align: var(--code-inline-align, baseline);
+
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-small);
+    box-shadow: none;
+
+    padding: 3px 5px 1px;
+    margin: 0 1px;
+  }
+  code::after,
+  code::before {
+    display: none;
+  }
+
+  // === Code Blocks <pre><code> ===
+  @gutter-width: 5ch;
+  @code-padding: 0.85rem 1.25rem 0.75rem;
+
+  pre {
+    background-color: var(--code-bg) !important;
+    // 细滚动条走槽位边框色；overflow-x 显式固化，不依赖上游默认
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-normal) transparent;
+    overflow-x: auto;
+    text-shadow: none;
+    white-space: pre;
+
+    border-radius: var(--radius-large);
+    border: 1px solid var(--border-muted);
+
+    padding: @code-padding;
+    margin: 1rem 0 1rem;
+
+    code {
+      color: var(--code-fg);
+      white-space: inherit;
+      vertical-align: baseline;
+      background-color: inherit;
+      border: none;
+      padding: 0;
+      margin: 0;
+
+      span {
+        padding: 0;
+        margin: 0;
+      }
+    }
+  }
+
+  li pre {
+    margin: 0.75rem 0 1rem;
+  }
+
+  @media print {
+    // 打印无滚动条：折行 + 可见溢出，长行代码既不裁切也不冲出页宽
+    // （同 katex-display 先例；code 继承 pre 的 wrap 不重写）
+    pre {
+      white-space: pre-wrap;
+      overflow: visible;
+      overflow-wrap: break-word;
+    }
+    pre code {
+      white-space: inherit;
+    }
+  }
+
+  // === Line Numbers ===
+  pre.line-numbers {
+    padding-left: @gutter-width + 1.5ch;
+
+    .line-numbers-rows {
+      position: absolute;
+      top: extract(@code-padding, 1);
+      left: 0;
+      width: @gutter-width;
+      border-right: 1px solid var(--code-gutter-fg);
+      font-size: 1em;
+      letter-spacing: -1px;
+
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+
+    .line-numbers-rows > span:before {
+      content: counter(linenumber);
+      color: var(--code-gutter-fg);
+      display: block;
+      text-align: right;
+      padding-right: 1ch;
+    }
+  }
+}
+
+//==============================================================================
+// Style LaTeX-like pseudocode
+//==============================================================================
+#style--pseudocode() {
+  .crossnote-pseudocode {
+    // 字体栈只写一次——.ps-keyword/.ps-funcname 继承同一 var，
+    // 覆盖时也只改这一处。
+    --ps-font-family: "KaTeX_Main", "Times New Roman", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", SimSun, serif;
+    color: var(--text-normal);
+    font-family: var(--ps-font-family);
+    font-size: 1em;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+    margin: 1.25rem 0;
+
+    .ps-root {
+      min-width: min(100%, 42rem);
+    }
+
+    .ps-algorithm {
+      border-top: 2px solid currentColor;
+      border-bottom: 1px solid currentColor;
+      margin: 0;
+      padding: 0;
+    }
+
+    .ps-algorithm.with-caption > .ps-line:first-child {
+      border-bottom: 1px solid currentColor;
+      font-weight: 400;
+      padding: 0.45rem 0.35rem 0.4rem;
+    }
+
+    .ps-algorithmic {
+      padding: 0.65rem 0.35rem 0.75rem;
+    }
+
+    .ps-line {
+      color: inherit;
+      font: inherit;
+      line-height: 1.55;
+      min-height: 1.55em;
+      margin: 0;
+      padding: 0;
+    }
+
+    .ps-keyword {
+      font-family: var(--ps-font-family);
+      font-style: normal;
+      font-variant: normal;
+      font-weight: 700;
+      text-transform: none;
+    }
+
+    .ps-funcname {
+      font-family: var(--ps-font-family);
+      font-style: normal;
+      font-variant: small-caps;
+      font-weight: 400;
+      text-transform: none;
+    }
+
+    .ps-comment {
+      color: var(--text-muted);
+      font-style: italic;
+      font-weight: 400;
+    }
+
+    .ps-linenum {
+      color: var(--text-faint);
+      display: inline-block;
+      font-size: 0.8em;
+      line-height: 1;
+      padding-right: 0.3em;
+      position: relative;
+      text-align: right;
+      user-select: none; // don't copy line numbers with the algorithm text
+      width: 1.8em;
+    }
+
+    .ps-algorithmic.with-linenum .ps-line.ps-code {
+      text-indent: -1.8em;
+    }
+
+    .ps-algorithmic.with-linenum .ps-line.ps-code > span {
+      text-indent: 0;
+    }
+
+    .ps-algorithmic.with-scopelines div.ps-block {
+      border-left: 1px solid var(--border-muted);
+      padding-left: 0.6em;
+    }
+
+    .ps-algorithmic.with-scopelines > div.ps-block {
+      border-left: none;
+    }
+
+    .katex {
+      color: inherit;
+      font-size: 1em;
+      text-indent: 0;
+    }
+
+    .ps-manual-color {
+      color: inherit;
+    }
+    .ps-color-red {
+      color: var(--color-red);
+    }
+    .ps-color-blue {
+      color: var(--color-blue);
+    }
+    .ps-color-green {
+      color: var(--color-green);
+    }
+    .ps-color-orange {
+      color: var(--color-yellow);
+    }
+    .ps-color-purple {
+      color: var(--color-purple);
+    }
+    .ps-color-gray {
+      color: var(--text-muted);
+    }
+  }
+
+  .pseudocode-error {
+    align-items: center;
+    background: color-mix(in srgb, var(--color-red) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-red) 45%, transparent);
+    border-radius: var(--radius-medium);
+    color: var(--color-red);
+    display: flex;
+    font-family: var(--code-font-family);
+    font-size: var(--code-font-size);
+    margin: 1rem 0 0;
+    padding: 0.65rem 0.8rem;
+    gap: 0.75rem;
+
+    > span {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .pseudocode-retry {
+      background: transparent;
+      border: 1px solid currentColor;
+      border-radius: var(--radius-small);
+      color: inherit;
+      cursor: pointer;
+      flex: 0 0 auto;
+      font: inherit;
+      padding: 0.25rem 0.55rem;
+
+      &:hover,
+      &:focus-visible {
+        background: color-mix(in srgb, var(--color-red) 12%, transparent);
+      }
+    }
+  }
+
+  pre.pseudocode-source-error {
+    border-color: var(--color-red);
+    margin-top: 0.35rem;
+  }
+
+  @media print {
+    .crossnote-pseudocode {
+      break-inside: avoid-page;
+      color: #000;
+      font-size: 11pt;
+      overflow: visible;
+      page-break-inside: avoid;
+    }
+
+    .pseudocode-error {
+      border-color: #000;
+      color: #000;
+
+      .pseudocode-retry {
+        display: none;
+      }
+    }
+  }
+}
+
+//==============================================================================
+// Style Blockquotes
+//==============================================================================
+#style--blockquotes() {
+  blockquote {
+    background-color: var(--code-bg);
+    color: var(--text-muted);
+    font-style: italic;
+
+    border: 1px solid var(--border-muted);
+    border-left: 5px solid var(--border-bold);
+    border-radius: var(--radius-medium);
+
+    padding: 0.5rem 1.25rem;
+    margin: 1.25rem 0 1.5rem;
+
+    p,
+    p + p,
+    ul,
+    ol {
+      margin-block: 0.5rem;
+    }
+    :is(ul, ol) li {
+      margin-block: 0;
+    }
+  }
+}
+
+//==============================================================================
+// Style Callouts
+//==============================================================================
+#style--callouts() {
+  /* === Obsidian callouts — `> [!type]` / `> [!type]-` / `> [!type]+` === */
+  // MPE 把它们渲染成 <div class="callout" data-callout="...">，折叠变体为
+  // <details class="callout"><summary class="callout-title">（data-callout 一律
+  // 小写且只在已知类型集合内）。bundled markdown-it-callout.css 自带硬编码 RGB
+  // 色板并在 HTML 导出时内联——这里复用同一套管线让三端都走槽位色板。
+  // 选择器全部带 .callout / details.callout 限定，特异性压过 bundled css 与
+  // 通用 details 样式（A4），避免裸 details>summary 规则撞车。
+  //
+  // 配色管线收敛为两个 custom property：--_callout-accent 与
+  // --_callout-icon。颜色/图标声明只在基类 .callout 发一遍，per-variant
+  // 的 [data-callout] 选择器只重新赋值这两个变量——同色系的声明不再
+  // 按变体组重复展开（var() 在元素本地解析，accent 链一路传到 ::before）。
+  .callout {
+    --_callout-accent: var(--color-blue);
+    --_callout-icon: "edit";
+
+    position: static; // bundled 用 relative+hidden 裁绝对定位图标；
+    overflow: visible; // 这里用 flex title + ::before 图标，不需要裁切
+    border-style: solid;
+    border-width: 1px;
+    border-left-width: 4px;
+    border-radius: var(--radius-medium);
+    box-shadow: none;
+
+    // Accent 色派生（原先 ._callout-colors 的固定参数：bg 9%、border 45%、
+    // edge 55%、icon 60%、title bg = bg×2.2≈19.8%）。--callout-text-shift
+    // 由暗色槽位整段覆写；缺省 -20 = light 加深。
+    &,
+    :is(strong, b) {
+      color: ~"hsl(from var(--_callout-accent) h s calc(l + var(--callout-text-shift, -20)))";
+    }
+    .css-color-alpha(background-color, var(--_callout-accent), 0.09);
+    .css-color-alpha(border-color, var(--_callout-accent), 0.45);
+    .css-color-alpha(border-left-color, var(--_callout-accent), 0.55);
+
+    @pad-x: 1.25rem;
+    padding-block: 0;
+    padding-inline: @pad-x;
+    margin: 1.25rem 0 1.5rem;
+
+    > .callout-title {
+      display: flex;
+      gap: 0;
+      align-items: center;
+      white-space: pre-wrap;
+
+      border: none;
+      padding: 0;
+      padding-block: 0.4rem;
+      padding-inline: @pad-x 1.25rem;
+      margin: 0 -@pad-x; // 负 margin 拉满全宽底色
+
+      .css-color-alpha(background-color, var(--_callout-accent), 0.198);
+      // bundled 把 title 刷成 rgb(var(--callout-color))；改回继承容器 accent
+      color: inherit;
+      font-weight: var(--font-weight-bold, 600);
+      font-size: 1em;
+      line-height: 1.25;
+
+      &::before {
+        position: static;
+        display: inline-block;
+        vertical-align: middle;
+        flex-shrink: 0;
+
+        padding: 0;
+        margin-left: -1px;
+        margin-right: 0.75rem;
+
+        content: var(--_callout-icon);
+        .css-color-alpha(color, var(--_callout-accent), 0.6);
+        font-family: var(--icon-font-family);
+        font-weight: 400;
+        font-size: 1.5em;
+        line-height: 1;
+      }
+    }
+
+    // Reduce margins for content inside callouts
+    > .callout-title + * {
+      margin-top: 0.75rem;
+    }
+    > .callout-title + p {
+      margin-top: 0.5rem;
+    }
+    p,
+    p + p,
+    ul,
+    ol {
+      margin-block: 0.5rem;
+    }
+    > p {
+      padding-left: 0; // bundled 给直接子 p 加 .4rem 缩进
+    }
+    :is(ul, ol) li {
+      margin-block: 0;
+    }
+
+    // Code blocks inside callouts
+    pre {
+      background-color: var(--code-on-tint-bg) !important;
+      code {
+        background-color: transparent;
+      }
+    }
+
+    // Margin for the last item inside the callout
+    > :not(.callout-title, pre, table, img):last-child {
+      margin-bottom: 0.75rem;
+    }
+
+    // 嵌套 callout 沿用 bundled 的紧凑间距
+    .callout {
+      margin: 0.75rem 0;
+    }
+
+    // 类型映射按 Obsidian 官方对齐；每条 [data-callout] 规则只覆盖
+    // --_callout-accent / --_callout-icon 两个变量。note 与默认完全一致，
+    // 不单列。
+    &[data-callout="info"] {
+      --_callout-icon: "info";
+    }
+    &[data-callout="todo"] {
+      --_callout-icon: "assignment_turned_in";
+    }
+    &[data-callout="abstract"],
+    &[data-callout="summary"],
+    &[data-callout="tldr"],
+    &[data-callout="tip"],
+    &[data-callout="hint"],
+    &[data-callout="important"] {
+      --_callout-accent: var(--color-cyan);
+    }
+    &[data-callout="abstract"],
+    &[data-callout="summary"],
+    &[data-callout="tldr"] {
+      --_callout-icon: "subject";
+    }
+    &[data-callout="tip"],
+    &[data-callout="hint"],
+    &[data-callout="important"] {
+      --_callout-icon: "lightbulb";
+    }
+    &[data-callout="success"],
+    &[data-callout="check"],
+    &[data-callout="done"] {
+      --_callout-accent: var(--color-green);
+      --_callout-icon: "check_circle";
+    }
+    &[data-callout="question"],
+    &[data-callout="help"],
+    &[data-callout="faq"],
+    &[data-callout="warning"],
+    &[data-callout="caution"],
+    &[data-callout="attention"] {
+      --_callout-accent: var(--color-orange);
+    }
+    &[data-callout="question"],
+    &[data-callout="help"],
+    &[data-callout="faq"] {
+      --_callout-icon: "help";
+    }
+    &[data-callout="warning"],
+    &[data-callout="caution"],
+    &[data-callout="attention"] {
+      --_callout-icon: "warning";
+    }
+    &[data-callout="failure"],
+    &[data-callout="fail"],
+    &[data-callout="missing"],
+    &[data-callout="danger"],
+    &[data-callout="error"],
+    &[data-callout="bug"] {
+      --_callout-accent: var(--color-red);
+    }
+    &[data-callout="failure"],
+    &[data-callout="fail"],
+    &[data-callout="missing"] {
+      --_callout-icon: "dangerous";
+    }
+    &[data-callout="danger"],
+    &[data-callout="error"] {
+      --_callout-icon: "report";
+    }
+    &[data-callout="bug"] {
+      --_callout-icon: "bug_report";
+    }
+    &[data-callout="example"] {
+      --_callout-accent: var(--color-purple);
+      --_callout-icon: "book";
+    }
+    &[data-callout="quote"],
+    &[data-callout="cite"] {
+      --_callout-accent: var(--text-muted);
+      --_callout-icon: "format_quote";
+    }
+  }
+
+  // 折叠变体 details.callout > summary.callout-title。marker 双保险
+  // （list-style:none + webkit 伪元素），单靠 display:flex 不稳。
+  details.callout {
+    > summary.callout-title {
+      cursor: pointer;
+      list-style: none;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      // 折叠 chevron 重画：currentColor 取 title 的 accent 文字色，一条规则
+      // 覆盖全部 [data-callout] 类型与所有槽位；margin-left:auto 推到 title 右缘。
+      &::after {
+        content: "";
+        display: inline-block;
+        flex-shrink: 0;
+        width: 0.45em;
+        height: 0.45em;
+        margin-left: auto;
+        margin-right: 0.15em;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        opacity: 0.85;
+        transform: translateY(-0.1em) rotate(-45deg);
+        transition:
+          transform 160ms ease,
+          opacity 160ms ease;
+      }
+    }
+    &[open] > summary.callout-title::after {
+      transform: translateY(-0.1em) rotate(45deg);
+      opacity: 1;
+    }
+  }
+}
+//==============================================================================
+// Tables
+//==============================================================================
+// === Alternative Table Styles ===
+#extra--table-styles(@parent: ~"") {
+  @{parent}.simple-table {
+    --table-header-bg: transparent;
+    --table-radius: 0;
+    --table-border-x-width: 1px;
+    --table-border-y-width: 1px;
+    --table-divider-width: 2px;
+    --table-outline-width: 0;
+  }
+  @{parent}.nohead-table {
+    thead {
+      display: none;
+    }
+    --table-radius: 0;
+    --table-border-x-width: 1px;
+    --table-border-y-width: 1px;
+    --table-divider-width: 0;
+    --table-outline-width: 0;
+  }
+  @{parent}.xline-table {
+    --table-border-x-width: 1px;
+    --table-border-y-width: 0;
+  }
+  @{parent}.yline-table {
+    --table-border-x-width: 0;
+    --table-border-y-width: 1px;
+  }
+  @{parent}.xyline-table {
+    --table-border-x-width: 1px;
+    --table-border-y-width: 1px;
+  }
+  @{parent}.noline-table {
+    --table-border-x-width: 0;
+    --table-border-y-width: 0;
+  }
+  @{parent}.dense-table {
+    --cell-pad-x: 8px;
+    --cell-pad-y: 2px;
+  }
+}
+
+#style--tables() {
+  --table-radius: var(--radius-medium);
+  --table-border-x-width: 1px;
+  --table-border-y-width: 1px;
+  --table-divider-width: 2px;
+  --table-outline-width: 1px;
+  --table-border-outline: var(--table-border);
+  --table-line-height: 1.5;
+  --cell-pad-x: 12px;
+  --cell-pad-y: 4px;
+
+  // === Reset Table Style ===
+  table {
+    display: table;
+    td,
+    th {
+      border: none;
+      padding: 0;
+      color: inherit;
+    }
+  }
+
+  // === Table Caption ===
+  table caption {
+    font-weight: bold;
+    font-size: 18px;
+    margin: 0 0 10px;
+  }
+
+  // === Table Style ===
+  table {
+    margin-block: 1.25rem 1.5rem;
+    margin-inline: 0;
+    width: auto;
+
+    border-collapse: separate;
+    border-spacing: 0px;
+    overflow: hidden;
+    border-radius: var(--table-radius);
+
+    // Header row
+    thead {
+      background-color: var(--table-header-bg);
+    }
+    tr > th {
+      font-weight: var(--font-weight-bold, 600);
+      // font-size: calc(var(--font-size) - 1px);
+      // text-transform: uppercase;
+      text-align: left;
+      line-height: 1.25;
+      padding-inline: var(--cell-pad-x);
+      padding-block: 7px;
+    }
+    tr:first-of-type > th {
+      border-top: var(--table-outline-width) solid var(--table-border-outline);
+    }
+    tr:last-of-type > th {
+      border-bottom: var(--table-divider-width) solid var(--table-border-strong);
+    }
+
+    // Table cells
+    tbody,
+    tbody tr {
+      background-color: var(--table-bg);
+    }
+    th,
+    td {
+      border-bottom: var(--table-border-x-width) solid var(--table-border);
+      border-right: var(--table-border-y-width) solid var(--table-border);
+      padding: var(--cell-pad-y) var(--cell-pad-x);
+      line-height: var(--table-line-height);
+    }
+    th:first-of-type,
+    td:first-of-type {
+      border-left: var(--table-outline-width) solid var(--table-border-outline);
+    }
+    th:last-of-type,
+    td:last-of-type {
+      border-right: var(--table-outline-width) solid var(--table-border-outline);
+    }
+    tr:last-of-type > td {
+      border-bottom: var(--table-outline-width) solid var(--table-border-outline);
+    }
+
+    // Radius on the corner cells
+    tr:first-of-type > th:first-of-type {
+      border-top-left-radius: var(--table-radius);
+    }
+    tr:first-of-type > th:last-of-type {
+      border-top-right-radius: var(--table-radius);
+    }
+    tr:last-of-type > td:first-of-type {
+      border-bottom-left-radius: var(--table-radius);
+    }
+    tr:last-of-type > td:last-of-type {
+      border-bottom-right-radius: var(--table-radius);
+    }
+
+    // Highlight even rows
+    tr:nth-child(even) > td {
+      background-color: var(--table-bg-alt);
+    }
+
+    // Highlight row under cursor
+    tr:hover > td {
+      background-color: var(--table-hover-bg);
+    }
+  }
+}
+
+//==============================================================================
+// Style Footnotes (markdown-it-footnote)
+//==============================================================================
+// 输出结构：行内 sup.footnote-ref > a（class 在 sup 上不在 a 上）、
+// <hr class="footnotes-sep">、section.footnotes > ol > li.footnote-item
+// （含 a.footnote-backref 回跳链接）。
+#style--footnotes() {
+  .footnotes {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-top: 2.5rem;
+  }
+
+  hr.footnotes-sep {
+    width: 30%;
+    margin-inline: 0;
+    margin-block: 2rem 1rem;
+    // 通用 hr（#dividers）是 border:none + radial 渐变 ::after 的整宽线——
+    // 只写 border-color 是死声明。特异性 0-3-1 压过 0-2-1 后，
+    // 关掉伪元素、改用 border-bottom 画出 30% 宽短分隔线。
+    border: none;
+    border-bottom: 1px solid var(--border-muted);
+
+    &::after {
+      display: none;
+    }
+  }
+
+  .footnote-item {
+    margin-block: 0.15em;
+  }
+
+  .footnote-backref {
+    text-decoration: none;
+    margin-left: 0.4em;
+    opacity: 0.7;
+  }
+
+  // 回跳命中高亮：与 --table-hover-bg 同族的 color-mix 比例
+  li.footnote-item:target {
+    background: color-mix(in srgb, var(--color-yellow) 18%, transparent);
+    border-radius: var(--radius-small);
+  }
+}
+
+//==============================================================================
+// Colorful Headings
+//==============================================================================
+#extra--colorful-headings() when (@colorful-headings=true) {
+  #heading-colors(true);
+}
+
+#heading-colors(@enable) when (@enable=true) {
+  h2 {
+    color: var(--color-red);
+  }
+  h3 {
+    color: var(--color-yellow);
+  }
+  h4 {
+    color: var(--color-blue);
+  }
+  h5 {
+    color: var(--color-purple);
+  }
+  h6 {
+    color: var(--text-normal);
+  }
+}
+
+#heading-colors(@enable) when (@enable=false) {
+  :is(h1, h2, h3, h4, h5, h6) {
+    color: inherit;
+  }
+}
+
+//==============================================================================
+// Style Dividers
+//==============================================================================
+#extra--dividers() when (@colorful-headings=true) {
+  #dividers(true);
+}
+#extra--dividers() when (default()) {
+  #dividers(false);
+}
+
+#dividers(@colorful) when (@colorful=true) {
+  // === Headings ===
+  h1 {
+    .add-divider-line(2px, linear, var(--border-divider));
+  }
+  h2 {
+    .add-divider-line(2px, linear, var(--color-red), 100%);
+  }
+
+  // === HR ===
+  hr {
+    background-color: inherit;
+    height: initial;
+    .add-divider-line(2px, radial, var(--border-divider));
+    margin: 2rem 0;
+  }
+}
+#dividers(@colorful) when (@colorful=false) {
+  // === Headings ===
+  h1 {
+    .add-divider-line(1px, solid, var(--border-divider));
+  }
+  h2 {
+    .add-divider-line(1px, solid, var(--border-divider));
+  }
+
+  // === HR ===
+  hr {
+    background-color: inherit;
+    height: initial;
+    .add-divider-line(1px, radial, var(--border-divider));
+    margin: 2rem 0;
+  }
+}
+
+//==============================================================================
+// Heading Numbering
+//==============================================================================
+#extra--heading-numbering() when (@heading-numbering=true) {
+  #heading-numbering(2);
+}
+
+//==============================================================================
+// Heading Numbering
+// Params:
+//   @start: Numbering starting with H1 or H2
+//==============================================================================
+#heading-numbering(@start: 2) {
+  @hd1: @start;
+  @hd2: @start + 1;
+  @hd3: @start + 2;
+  @levels: @hd1, @hd2, @hd3;
+  @space: "\00a0\00a0";
+
+  // Reset ::before elements if already set
+  ._reset-style(@levels) {
+    each(@levels, {
+      h@{value}::before {
+        display: inline;
+        font-family: inherit;
+        font-weight: inherit;
+        font-style: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        color: inherit;
+        opacity: 1;
+        width: auto;
+        margin: 0;
+      }
+    });
+  }
+  ._reset-style(@levels);
+
+  counter-reset: sec1;
+
+  h@{hd1} {
+    counter-reset: sec2;
+  }
+  h@{hd2} {
+    counter-reset: sec3;
+  }
+  h@{hd1}::before {
+    counter-increment: sec1;
+    content: counter(sec1) @space;
+  }
+  h@{hd2}::before {
+    counter-increment: sec2;
+    content: counter(sec1) "." counter(sec2) @space;
+  }
+  h@{hd3}::before {
+    counter-increment: sec3;
+    content: counter(sec1) "." counter(sec2) "." counter(sec3) @space;
+  }
+
+  // Generate classes allowing to exclude a heading from numbering
+  // Example: `h2.nocount`
+  each(@levels, {
+    h@{value}.nocount::before {
+      counter-increment: none;
+      content: "";
+    }
+  });
+}
+
+//==============================================================================
+// HTML Export
+// - Cleared transforms, they made problems when zooming images.
+//==============================================================================
+#html-export() {
+  body[for="html-export"] .markdown-preview {
+    transform: none !important;
+    left: 0 !important;
+  }
+}
+
+//==============================================================================
+// Override UI
+//==============================================================================
+#override-ui() {
+  // === Context Menu ===
+  .contexify {
+    font-family: var(--font-family);
+    font-size: var(--ui-font-size);
+    font-weight: var(--font-weight, 400);
+    letter-spacing: var(--letter-spacing, normal);
+  }
+  .contexify.contexify_theme-dark {
+    --contexify-menu-bgColor: var(--vscode-menu-background);
+    --contexify-separator-color: var(--vscode-menu-separatorBackground);
+    --contexify-item-color: var(--vscode-menu-foreground);
+  }
+
+  // "End of Document" label
+  body:not([data-presentation-mode]) {
+    .final-line.end-of-document {
+      display: block !important;
+      color: var(--text-faint) !important;
+    }
+  }
+
+  // === Appearance picker (theme-toggle.js) ===
+  // Floating button + popup menu appended to <body> by the imported script —
+  // outside .markdown-preview so note re-renders never detach them. Below
+  // the image popup (z-index 200), above content.
+  #xnote-theme-toggle {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border-normal);
+    border-radius: 50%;
+    background: var(--bg-panel);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0.5;
+    transition:
+      opacity 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease;
+
+    &:hover,
+    &[aria-expanded="true"] {
+      opacity: 1;
+      color: var(--text-normal);
+      border-color: var(--border-bold);
+    }
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid var(--link-color);
+      outline-offset: 2px;
+    }
+  }
+
+  // Two-tone slot swatch — the dot's own colors identify the palette, so it
+  // deliberately does NOT follow --bg-primary/--text-normal.
+  .xnote-dot {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--border-bold);
+    flex: none;
+  }
+
+  #xnote-theme-menu {
+    position: fixed;
+    right: 18px;
+    bottom: 58px;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    min-width: 132px;
+    padding: 4px;
+    border: 1px solid var(--border-normal);
+    border-radius: var(--radius-medium);
+    background: var(--bg-panel);
+    box-shadow: 0 4px 16px var(--shadow-pop);
+  }
+
+  .xnote-theme-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: var(--radius-small);
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--bg-secondary);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--link-color);
+      outline-offset: -2px;
+    }
+    .xnote-theme-label {
+      flex: 1;
+    }
+    .xnote-theme-check {
+      color: var(--link-color);
+      visibility: hidden;
+    }
+    &[aria-checked="true"] .xnote-theme-check {
+      visibility: visible;
+    }
+  }
+
+  // Preview chrome, not document — never in print/PDF.
+  @media print {
+    #xnote-theme-toggle,
+    #xnote-theme-menu {
+      display: none !important;
+    }
+  }
+}
+
+//==============================================================================
+// Override TOC
+// - Use Material Icons for markers instead of native browser markers.
+//
+//  details.md-toc-details
+//    summary.md-toc-link-wrapper(data-level=0) ::before
+//      a.md-toc-link Parent H1
+//    div.md-toc-link-wrapper(data-level=1) ::before
+//      a.md-toc-link Leaf H2
+//    details.md-toc-details
+//      summary.md-toc-link-wrapper(data-level=1) ::before
+//        a.md-toc-link Parent H2
+//      div.md-toc-link-wrapper(data-level=2) ::before
+//        a.md-toc-link Leaf H3
+//  div.md-toc-link-wrapper(data-level=0) ::before
+//    a.md-toc-link Leaf H1
+//==============================================================================
+#override-toc(@toc-depth: 3, @toc-ellipsis: false, @debug: false) {
+  /* === Override TOC === */
+  @toc-indent: 20px;
+  @toc-line: 20px;
+  @toc-line-gap: 2px;
+
+  .preview-container.show-sidebar-toc {
+    .md-sidebar-toc.md-sidebar-toc {
+      .reset-sidebar-style();
+      .set-sidebar-style();
+
+      .md-toc {
+        .set-toc-style();
+        .toc-depth(@toc-depth - 1);
+      }
+    }
+  }
+
+  // === Reset Sidebar Style ===
+  .reset-sidebar-style() {
+    border-left: none;
+
+    details {
+      padding-left: 0 !important;
+    }
+
+    .md-toc-link-wrapper {
+      list-style: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+
+      // 后代真实构成：a.md-toc-link（内含标题行内元素）与有序变体的
+      // 嵌套 ol——* 让文档每个元素都跑祖先链检查，收窄到实际集合。
+      a,
+      a *,
+      ol {
+        font-family: inherit;
+        font-weight: inherit;
+        font-size: inherit;
+        font-style: inherit;
+        line-height: inherit;
+        letter-spacing: inherit;
+
+        background-color: initial;
+        color: inherit;
+        border: none;
+        outline: none;
+        box-shadow: none;
+
+        padding: 0;
+        margin: 0;
+      }
+
+      a,
+      a.md-toc-link {
+        padding: 0;
+        margin: 0;
+      }
+
+      code::after,
+      code::before {
+        display: none;
+      }
+    }
+  }
+
+  // === Sidebar Style ===
+  .set-sidebar-style() {
+    font-family: var(--font-family);
+    font-size: var(--ui-font-size);
+    font-weight: var(--font-weight, 400);
+    letter-spacing: var(--letter-spacing, normal);
+    line-height: @toc-line;
+
+    background-color: var(--bg-panel) !important;
+    color: var(--text-normal) !important;
+    // 槽位化投影：第二层再混一次 transparent 降档成更淡的晕
+    border-left: 1px solid var(--border-muted);
+    box-shadow:
+      -1px 0 4px 1px var(--shadow-pop),
+      -3px 0 14px 0 color-mix(in srgb, var(--shadow-pop) 60%, transparent);
+
+    // Resize handle
+    .md-sidebar-toc-resize-handle {
+      &:active,
+      &:hover {
+        .css-color-alpha(background-color, var(--color-blue), 0.4);
+      }
+    }
+
+    ::selection {
+      background-color: var(--selection);
+    }
+
+    .md-toc-link-wrapper {
+      a,
+      a.md-toc-link {
+        color: var(--link-color);
+        text-decoration: none;
+        line-height: @toc-line;
+
+        &:hover {
+          background-color: inherit;
+          color: var(--link-hover-color);
+          text-decoration: underline;
+        }
+      }
+
+      code,
+      tt {
+        background-color: var(--code-inline-bg);
+        color: var(--code-inline-fg);
+
+        border: 1px solid var(--border-faint);
+        border-radius: var(--radius-small);
+        box-shadow: none;
+
+        font-size: 0.93em;
+        white-space: nowrap;
+        padding: 1px 3px;
+      }
+
+      kbd {
+        background-color: var(--code-inline-bg);
+        color: var(--code-inline-fg);
+
+        border: 1px solid var(--border-button);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        box-shadow: none;
+
+        font-size: 0.93em;
+        padding: 1px 3px 0;
+      }
+    }
+  }
+
+  // === TOC Style ===
+  .set-toc-style() {
+    padding-top: 0.75rem;
+    padding-inline: 2px 0.5rem;
+
+    // === INDENTATION ===
+    details {
+      overflow: hidden;
+    }
+    details details {
+      margin-left: @toc-indent !important;
+    }
+    details > div.md-toc-link-wrapper {
+      margin-left: @toc-indent !important;
+    }
+
+    // === TOC LINKS ===
+    .md-toc-link-wrapper {
+      display: flex !important;
+      align-items: flex-start;
+      gap: 0px;
+
+      // Use padding instead of margin when flexbox used
+      // to prevent excessive gaps when levels are collapsed
+      padding-block: @toc-line-gap !important;
+
+      :is(a, a.md-toc-link) when (@toc-ellipsis=true) {
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+    }
+
+    .md-toc-link-wrapper a.md-toc-link when (@debug=true) {
+      .debug(blue, 0.15);
+    }
+
+    // === MARKERS ===
+    .md-toc-link-wrapper::before {
+      display: inline-block;
+      flex: none;
+      align-self: flex-start;
+      text-align: center;
+
+      font-family: var(--icon-font-family);
+      font-weight: 400;
+      line-height: @toc-line;
+      width: @toc-line;
+
+      opacity: 0.6;
+    }
+
+    .md-toc-link-wrapper::before when (@debug=true) {
+      .debug(black, 0.15);
+    }
+
+    .md-toc-link-wrapper:hover::before {
+      opacity: 1 !important;
+    }
+
+    // Collapsed marker
+    summary.md-toc-link-wrapper::before {
+      content: "chevron_right";
+      cursor: pointer;
+      font-size: 20px;
+      transition: transform 0.15s ease;
+    }
+
+    // Expanded marker
+    details[open] > summary.md-toc-link-wrapper::before {
+      transform: rotate(90deg);
+    }
+
+    // Non-collapsible leaf items
+    .md-toc-link-wrapper:not(summary)::before {
+      .leaf-marker();
+    }
+  }
+
+  .leaf-marker() {
+    content: "arrow_right_alt";
+    cursor: default;
+    font-size: 15px;
+    opacity: 0.35;
+  }
+
+  // === Limit TOC tree depth ===
+  .toc-depth(@toc-depth) {
+    // Return string of selectors for visible data-level 0..@toc-depth
+    .get-visible-levels(@toc-depth) {
+      ._rule(@level) {
+        @result: ~"> details > summary[data-level='@{level}'], > div[data-level='@{level}']";
+      }
+      ._loop(@level, @selector: ~"") when (@level > 0) {
+        @add: ._rule(@level) [];
+        ._loop(@level - 1, ~"@{selector}@{add}, ");
+      }
+      ._loop(@level, @selector: ~"") when (@level = 0) {
+        @add: ._rule(@level) [];
+        @result: ~"@{selector}@{add}";
+      }
+      ._loop(@toc-depth);
+    }
+
+    // Detect parents with no visible levels
+    @visible-levels: .get-visible-levels(@toc-depth) [];
+
+    details.md-toc-details:not(:has(@{visible-levels})) {
+      & when (@debug=true) {
+        summary a {
+          color: green;
+          .debug(green, 0.15);
+        }
+      }
+      & when not (@debug=true) {
+        summary::before {
+          .leaf-marker();
+          transform: none !important;
+        }
+      }
+    }
+
+    // Hide too deep nested levels
+    .hide-level(@toc-depth + 1);
+
+    .hide-level(@level) when (@level <= 5) {
+      .md-toc-link-wrapper[data-level="@{level}"] {
+        & when (@debug=true) {
+          a {
+            text-decoration: line-through !important;
+            color: red !important;
+            .debug(red, 0.15) !important;
+          }
+        }
+        & when not (@debug=true) {
+          display: none !important;
+        }
+      }
+      .hide-level(@level + 1);
+    }
+  }
+}
+
+//==============================================================================
+// Quadratic interpolation for N font sizes
+//
+// f(x) = a*x^2 + b*x + c; b is a parameter
+// f(0) = fs1 = a*0 + b*0 + c
+// f(n-1) = fsN = a*(n-1)^2 + b*(n-1) + c
+// => c = fs1
+// => a = (fsN - fs1 - (n-1)*b) / (n-1)^2
+//==============================================================================
+.calc-quadratic-fs(@i, @fs1, @fsN, @N, @b: 0) {
+  @x: @i - 1;
+  @a: (@fsN - @fs1 - (@N - 1) * @b) / pow(@N - 1, 2);
+  @result: (@a * @x * @x) + (@b * @x) + @fs1;
+}
+
+//==============================================================================
+// CSS Color Utility Mixins
+//
+// Generate modern CSS Color Level 4 expressions using `rgb()` and `hsl()`
+// with the `from <color>` syntax.
+//
+// NOTES:
+// - These do NOT use LESS color functions.
+// - All calculations are evaluated at runtime by the browser.
+// - Designed to work with CSS variables (`var(--color-*)`).
+//==============================================================================
+.color-alpha(@color, @alpha) {
+  @result: ~"rgb(from @{color} r g b / @{alpha})";
+}
+.css-color-alpha(@prop, @color, @alpha) when (isnumber(@alpha)) {
+  @{prop}: ~"rgb(from @{color} r g b / @{alpha})";
+}
+.css-color-alpha(@prop, @color, @alpha) when (default()) {
+  @{prop}: @color;
+}
+.debug(@color, @bg-alpha: 0, @border-alpha: 1, @inset: 1px, @style: solid) {
+  .debug-bg(@color, @bg-alpha);
+  .debug-border(@color, @border-alpha, @inset, @style);
+}
+
+.debug-bg(@color, @alpha: 0.2) {
+  & when (@alpha > 0) {
+    background-color: ~"rgb(from @{color} r g b / @{alpha})";
+  }
+}
+
+.debug-border(@color, @alpha: 1, @inset: 1px, @style: solid) {
+  & when (@alpha > 0) and (@inset > 0px) {
+    outline: @inset @style ~"rgb(from @{color} r g b / @{alpha})";
+    outline-offset: -@inset;
+  }
+}
+
+//==============================================================================
+// Add a visual divider line
+//
+// Params:
+//   @width:  Divider thickness
+//   @style:  solid | linear | radial
+//   @color:  Divider color
+//   @fade:   Gradient softness (for gradients) | alpha (for solid lines)
+//   @offset: Space between text and divider line
+//
+// Examples:
+//   .add-divider-line(1px, solid, var(--color-red), 0.4);
+//   .add-divider-line(2px, linear, var(--color-red));
+//==============================================================================
+.add-divider-line(@width, @style, @color, @fade: none, @offset: 0.35rem) {
+  // Solid divider uses border-bottom
+  & when (@style = solid) {
+    &::after {
+      display: none;
+    }
+    padding: 0;
+    padding-bottom: @offset;
+    border: none;
+    border-bottom-width: @width;
+    border-bottom-style: solid;
+    border-bottom-color: if(isnumber(@fade), .color-alpha(@color, @fade)[@result], @color);
+  }
+
+  // Gradient divider (linear or radial) uses a pseudo-element
+  & when (@style = linear), (@style = radial) {
+    border: none;
+    padding: 0;
+
+    &::after {
+      content: "";
+      display: block;
+      margin-top: @offset;
+      height: @width;
+      .add-gradient(@style, @color, @fade);
+    }
+  }
+}
+.add-gradient(@style, @color, @fade) when (@style = linear) {
+  @colorStop: if(isnumber(@fade), 100% + @fade, 100%);
+  background-image: linear-gradient(to right, transparent 5%, @color @colorStop);
+}
+.add-gradient(@style, @color, @fade) when (@style = radial) {
+  @colorStop: if(isnumber(@fade), -@fade, 0);
+  background-image: radial-gradient(circle, @color @colorStop, transparent);
+}

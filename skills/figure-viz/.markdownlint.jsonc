@@ -1,0 +1,25 @@
+// 与 obsidian vault 的 markdownlint 规则保持一致；markdownlint-cli2 和
+// vscode-markdownlint 都会读取此文件（作用于本目录及以下）。
+{
+    "MD007": { "indent": 4 },
+    "MD010": false,
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD025": false,
+    "MD029": false,
+    "MD033": false,
+    "MD034": false,
+    "MD036": false,
+    "MD040": false,
+    "MD045": false,
+    // [^key]: 脚注区当参考文献表用时条目不内联引用是常态；
+    // 死引用清理由写作侧自查而非机检。
+    "MD053": false,
+    // emphasis marker 归 prettier：它与 mdl 的 CJK flanking 判定不一致——
+    // `，*具体*（` 这类位置 prettier 判定不成 emphasis 而写 `_`，mdl 判成
+    // emphasis 要求 `*`，同一 span 双向改写死循环。
+    "MD049": false,
+    // 表格列对齐归 prettier（display-width 补齐）。MD060 用自己的宽度模型
+    // 校验，遇 CJK/emoji/** 混排单元格两边算不齐——既修不动也相互打架。
+    "MD060": false,
+}

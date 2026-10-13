@@ -1,0 +1,116 @@
+#!/bin/bash
+# arxiv-tex — uvx arxiv-to-prompt 的版本戳 wrapper。
+#
+#   arxiv-tex <arxiv_id|abs/pdf URL> [arxiv-to-prompt 选项]
+#             [--refresh] [--no-cache] [--cache-ttl SEC]
+#
+# 解出裸 id → lgc 版本戳（ns=link-get，键 arxiv:<id>，值 "<ver> <epoch>"）→
+# 戳陈（≥24h）或缺席才探 export.arxiv.org API（3s 超时失败放行）→ 上游有新
+# 版本自动追加 --force-download 并刷戳 → exec uvx arxiv-to-prompt。
+# lgc 缺席 / LGC_OFF / API 失败 / --local-folder / 显式 vN → 完全直通。
+# lgc-needs: cat put value
+set -eo pipefail
+
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+[ $# -eq 0 ] && {
+  usage >&2
+  exit 2
+}
+
+LGC_BIN="${LGC_BIN:-lgc}"
+have_lgc() { [ -z "${LGC_OFF:-}" ] && command -v "$LGC_BIN" >/dev/null 2>&1; }
+stamp_get() {
+  have_lgc || return 1
+  "$LGC_BIN" cat link-get "arxiv:$1" 2>/dev/null
+}
+stamp_put() {
+  have_lgc || return 0
+  "$LGC_BIN" put link-get "arxiv:$1" --value "$2" --ttl "${LGC_TTL:-7776000}" >/dev/null 2>&1 || true
+}
+
+looks_like_id() {
+  printf '%s' "$1" | grep -qE '^([0-9]{4}\.[0-9]{4,5}(v[0-9]+)?|[a-z-]+(\.[A-Z]{2})?/[0-9]{7}(v[0-9]+)?)$'
+}
+
+# ---- 剥 wrapper 自有旗标，解裸 id ------------------------------------------
+ARGS=()
+ID=""
+SKIP=0
+FORCE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --refresh) export LGC_REFRESH=1 ;;
+  --no-cache) export LGC_OFF=1 ;;
+  --cache-ttl)
+    export LGC_TTL="${2:?--cache-ttl 需要秒数}"
+    shift
+    ;;
+  --force-download)
+    ARGS+=("$1")
+    FORCE=1
+    ;;
+  --local-folder)
+    ARGS+=("$1" "${2:?--local-folder 需要路径}")
+    SKIP=1
+    shift
+    ;;
+  *)
+    ARGS+=("$1")
+    if [ -z "$ID" ]; then
+      case "$1" in
+      *arxiv.org/abs/* | *arxiv.org/pdf/*)
+        t="${1#*arxiv.org/}"
+        t="${t#abs/}"
+        t="${t#pdf/}"
+        t="${t%%[?#]*}"
+        t="${t%.pdf}"
+        looks_like_id "$t" && ID="$t"
+        ;;
+      *) looks_like_id "$1" && ID="$1" ;;
+      esac
+    fi
+    ;;
+  esac
+  shift
+done
+case "$ID" in *v[0-9]*) SKIP=1 ;; esac # 显式钉版本：戳与强刷都无意义（*v[0-9] 只盖单数字版本）
+
+# ---- 版本戳探测（全失败=直通） ----------------------------------------------
+if [ -n "$ID" ] && [ "$SKIP" -eq 0 ] && have_lgc; then
+  stored="$(stamp_get "$ID" || true)"
+  sver="${stored%% *}"
+  sts="${stored##* }"
+  fresh=0
+  case "$sts" in
+  '' | *[!0-9]*) ;;
+  *) [ "$(($(date +%s) - sts))" -lt 86400 ] && fresh=1 ;;
+  esac
+  if [ "$fresh" -eq 0 ]; then
+    xml="$(curl -fsSL --max-time 3 "https://export.arxiv.org/api/query?id_list=$ID" 2>/dev/null || true)"
+    cur=""
+    if [ -n "$xml" ]; then
+      entry="$(printf '%s' "$xml" | sed -n '/<entry>/,/<\/entry>/p')"
+      cur="$(printf '%s' "$entry" | sed -n 's:.*arxiv\.org/abs/[^<]*\(v[0-9][0-9]*\)</id>.*:\1:p' | head -1)"
+      [ -z "$cur" ] &&
+        cur="$(printf '%s' "$entry" | sed -n 's:.*<updated>\([^<]*\)</updated>.*:\1:p' | head -1)"
+    fi
+    if [ -n "$cur" ]; then
+      if [ -n "$sver" ] && [ "$cur" != "$sver" ] && [ "$FORCE" -eq 0 ]; then
+        ARGS+=(--force-download)
+        FORCE=1
+        printf 'arxiv-tex: 新版本 %s（上次 %s）→ --force-download\n' "$cur" "$sver" >&2
+      fi
+      stamp_put "$ID" "$cur $(date +%s)"
+    fi
+  fi
+fi
+
+# --refresh 语义=绕过一切缓存含上游本体（--no-cache 优先于 --refresh）
+[ -z "${LGC_OFF:-}" ] && [ -n "${LGC_REFRESH:-}" ] && [ -n "$ID" ] && [ "$SKIP" -eq 0 ] && [ "$FORCE" -eq 0 ] &&
+  ARGS+=(--force-download)
+
+command -v uvx >/dev/null 2>&1 || {
+  echo "arxiv-tex: uvx 未装（curl -LsSf https://astral.sh/uv/install.sh | sh）" >&2
+  exit 5
+}
+exec uvx arxiv-to-prompt "${ARGS[@]}"

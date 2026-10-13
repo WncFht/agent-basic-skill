@@ -1,0 +1,37 @@
+{
+    // prettier 版本以 package.json/node_modules 为唯一事实源；
+    // 缺 node_modules 时直接报错，而不是静默回落到扩展内置版本
+    "prettier.prettierPath": "./node_modules/prettier",
+    // Markdown Preview Enhanced：预览环境本体在 /.crossnote/（gitignore 的本机
+    // 目录，由 setup-toolchain 部署）。enablePreviewScripts 是 theme-toggle.js /
+    // pseudocode-runtime.js 注入的前提（另要求工作区受信任）；mathRenderingOption KaTeX 是 pseudocode
+    // 数学 CSS 的依赖；previewTheme none.css 把主题交给 .crossnote/style.less。
+    // ⚠ 刻意不写 wikiLinkResolution / alwaysShowBacklinksInPreview：
+    // "shortest"/反链面板会触发全工作区笔记索引（stat+readFile 每个文件建
+    // mentions/backlink/search 图，首个预览 html 要等索引建完——4k 文件仓
+    // 实测 17.8s，百万文件仓 73s）。[[wikilink]] 语法同样关闭，库内链接用
+    // 标准相对路径 Markdown 链接。
+    "markdown-preview-enhanced.enablePreviewScripts": true,
+    "markdown-preview-enhanced.enableScriptExecution": true,
+    "markdown-preview-enhanced.enableWikiLinkSyntax": false,
+    "markdown-preview-enhanced.enableCriticMarkupSyntax": true,
+    "markdown-preview-enhanced.enableExtendedTableSyntax": true,
+    "markdown-preview-enhanced.enableHTML5Embed": true,
+    "markdown-preview-enhanced.breakOnSingleNewLine": true,
+    "markdown-preview-enhanced.mathRenderingOption": "KaTeX",
+    "markdown-preview-enhanced.previewTheme": "none.css",
+    "markdown-preview-enhanced.previewColorScheme": "systemColorScheme",
+    "markdown-preview-enhanced.mermaidTheme": "dark",
+    "markdown-preview-enhanced.frontMatterRenderingOption": "code block",
+    "[markdown]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.markdownlint": "always"
+        }
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    }
+}

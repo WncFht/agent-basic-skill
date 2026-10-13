@@ -1,0 +1,80 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": { "font": "serif", "base": 7.6 },
+    "size": { "slot": "half", "height": 1.85 },
+    "colors": {
+        "registries": {
+            "arm": { "wls": "vblue", "smp": "vteal", "fwd": "vgray" }
+        }
+    },
+    "data": {
+        "traj": {
+            "columns": {
+                "step": [
+                    0, 40, 80, 120, 160, 200, 0, 40, 80, 120, 160, 200, 0, 40,
+                    80, 120, 160, 200
+                ],
+                "arm": [
+                    "wls",
+                    "wls",
+                    "wls",
+                    "wls",
+                    "wls",
+                    "wls",
+                    "smp",
+                    "smp",
+                    "smp",
+                    "smp",
+                    "smp",
+                    "smp",
+                    "fwd",
+                    "fwd",
+                    "fwd",
+                    "fwd",
+                    "fwd",
+                    "fwd"
+                ],
+                "kl": [
+                    0.52, 0.41, 0.34, 0.3, 0.28, 0.27, 0.52, 0.44, 0.39, 0.36,
+                    0.34, 0.33, 0.52, 0.46, 0.43, 0.42, 0.41, 0.41
+                ]
+            }
+        }
+    },
+    "meta": {
+        "ledger": "line: 每臂 = arm 的 KL 轨迹；x=step∈[0,200]，y=KL(p||T)；ref:h=0.27 为 exact floor",
+        "caption": "sampled WLS converges to the dense-field KL"
+    },
+    "title": "sampled WLS closes on the dense field",
+    "xaxis": { "label": "step" },
+    "yaxis": { "label": "$\\mathrm{KL}(p\\Vert T)$" },
+    "grid": "y-only",
+    "series": [
+        {
+            "kind": "line",
+            "id": "traj",
+            "from": "traj",
+            "by": "arm",
+            "x": "step",
+            "y": "kl",
+            "color": "arm",
+            "marker": "by",
+            "ms": 3,
+            "lw": 1.1,
+            "label": {
+                "wls": "true WLS",
+                "smp": "sampled WLS",
+                "fwd": "fwd KL"
+            }
+        },
+        {
+            "kind": "ref",
+            "dir": "h",
+            "at": 0.27,
+            "ls": ":",
+            "label": "exact floor"
+        }
+    ],
+    "legend": { "where": "below", "ncol": 2 }
+}

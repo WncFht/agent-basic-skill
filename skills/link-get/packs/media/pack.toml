@@ -1,0 +1,42 @@
+# media pack — monolith wrap of media-get (lgc_off=false: keeps its --claim
+# single-flight, b23 resolution, and bilibili cred internals; engine layers
+# gates + journal + envelope on top —— 自管缓存语义：engine 不探不写不记账，
+# probe/satisfies/claim/put/neg 全归 connector，防双写无 params 的垃圾 entry)
+cred_domain = "bili"    # cred8()：cookies/bilibili.txt → BBDown.data——与 lgc bili 域同链
+
+[pack]
+name = "media"
+abi = 1
+ns = "link-get"
+kinds = ["media"]
+label = "`--media`"
+desc = "meta.json + cover + video.mp4 + srt / audio.wav"
+
+[match]
+hosts = ["*"]                            # 由 --media/-p media 强制，不做自动路由主力
+schemes = ["http", "https"]
+
+[identity]
+keyexpr = "media:{url}"                  # 与 media-get key='media:'+url 一致
+# satisfies 为 decompose 预留的迁移合同（media-get:774 同构）：self-managed
+# wrap 下 engine 探测整体跳过、本声明暂不生效；拆解后探测即按此判满足——
+# 请求 max_height/langs → --satisfies 断言束的 height∈[req,req_cap] 且
+# langs⊆langs_obtained∪(meta 证缺)，entry params 由 lane result.params 上报
+satisfies = { max_height = { param = "max_height", default = 1080, type = "int" }, langs = { param = "langs", default = "zh-Hans,zh-CN,zh,ai-zh,en,en-US", type = "csv" } }
+
+[params]
+max_height = { type = "int", desc = "--max-height：视频高度上限（默认 1080）" }
+langs = { type = "str", desc = "--langs：字幕语言优先级 csv（默认 zh-Hans,zh-CN,zh,ai-zh,en,en-US）" }
+
+[[lanes]]
+name = "media-get"
+exec = "monolith"
+connector = "../../scripts/connectors/media-get"
+needs = { tools = ["yt-dlp", "ffmpeg", "curl"], env = [], env_optional = ["LGC_WAIT", "PROXY"], creds = ["~/.config/link-get/cookies/bilibili.txt", "~/BBDown.data"] }
+egress = { hosts = ["*"], proxy = "optional" }
+budget_ms = 600000
+
+[monolith]
+lgc_off = false
+argv = ["{url}", "-o", "{artifact_dir}"]
+flag_params = { max_height = "--max-height", langs = "--langs", cache_ttl = "--cache-ttl", refresh = "--refresh", no_cache = "--no-cache" }

@@ -1,0 +1,119 @@
+# canvas pack — monolith wrap of canvas-get (lgc_off=false 必须：jwt/tecl/donor
+# 是 lgc value 键，OFF 会迫使每次全量 OIDC+donor 重扫——见 PLAN.md §3.1.4；
+# 自管缓存语义：engine 不探不写不记账，lec:/jwt:/donor: 键域全归 connector)
+# kind=enum → 枚举面：canvas-rest（lectures 默认列讲次/--list-courses/--files/
+# --announcements/--assignments → {type:data}）与 canvas-mint（--mint → 铸 cred
+# 键，writes_cred）；kind=lecture → 实录下载 monolith wrap。唯 --download 由分发层
+# 恒直连 connector（签名链新鲜性契约，不经 engine）。
+cred_domain = "canvas"        # ~/.config/canvas-skill/token → lgc canvas 域（tok8 指纹）
+writes_cred = "canvas-skill"  # canvas-get/canvas-mint 铸 jwt/tecl/donor cred value 键入此 ns
+
+[pack]
+name = "canvas"
+abi = 1
+ns = "canvas-skill"
+kinds = ["lecture", "enum"]
+desc = "PAT 直通 REST + LTI 实录；枚举走 canvas-rest，`--mint` 铸 cred，`--download` 直连"
+
+[match]
+hosts = ["oc.sjtu.edu.cn", "*.oc.sjtu.edu.cn", "v.sjtu.edu.cn", "*.v.sjtu.edu.cn"]
+schemes = ["http", "https"]
+
+# 裸课程号落地（评审实锤 ARCH-FINAL §3）：'link-get 97882' 在 canon 前重写成
+# 课程根 URL——否则 kinds[0]=lecture → monolith 只把讲次列表打 stdout 无产物
+# → noresults。重写只此一条；更深输入形不归此表
+[[match.bare]]
+pattern = '^([0-9]{4,6})$'
+rewrite = 'https://oc.sjtu.edu.cn/courses/{1}'
+
+[identity]
+keyexpr = "canvas:{url}"                 # 外层键只供 journal/neg；内层 probe 权威
+# 课程根 URL（仅 /courses/<id> 本体，可带尾斜杠/query）→ enum 臂（lane 内默认
+# lectures 列讲次）；更深路径（files/assignments 等课程内视图）不命中、保持
+# kinds[0]=lecture 走 monolith——边界与 canvas-get resolve_course_id 的
+# /courses/<id> 抽取面一致，只有"根"才从下载语义改判枚举语义
+kind_by_url = { enum = '/courses/[0-9]+/?(\?.*)?$' }
+
+[params]
+enum = { type = "str", values = ["lectures", "courses", "files", "announcements", "assignments", "mint"], desc = "枚举臂：kind=enum 且未注入时默认 lectures（列讲次）；其余值由分发层旗标注入" }
+lecture = { type = "int", desc = "--lecture N：第 N 讲（按上课时间排序）" }
+all = { type = "bool", desc = "--all：下载全部讲次" }
+camera = { type = "str", desc = "--camera auto|all|N：机位选择（默认 auto 优先 PPT 录屏）" }
+cover_at = { type = "str", desc = "--cover-at SEC|MM:SS：封面抽帧时刻（默认 120s）" }
+course = { type = "str", desc = "课程位置参显式覆盖；enum 臂 raw 缺席时 lanes 取用" }
+list_courses = { type = "bool", desc = "--list-courses：列我在选的课（enum=courses 臂旗标回波）" }
+files = { type = "bool", desc = "--files：列课程文件（enum=files 臂旗标回波）" }
+announcements = { type = "bool", desc = "--announcements：列课程公告（enum=announcements 臂旗标回波）" }
+assignments = { type = "bool", desc = "--assignments：列作业与截止（enum=assignments 臂旗标回波）" }
+mint = { type = "bool", desc = "--mint：铸 LTI jwt/tecl cred 键（enum=mint → canvas-mint lane）" }
+download = { type = "str", desc = "--download DIR：配合 --files 下载；分发层恒直连 connector 不经 engine" }
+token = { type = "str", secret = true, desc = "Canvas PAT——壳映射 CANVAS_TOKEN env 永不进 --param（声明供自检/文档）" }
+
+[[lanes]]
+name = "canvas-get"
+exec = "monolith"
+connector = "canvas-get"                 # PATH 解析
+needs = { tools = ["ffmpeg", "curl"], env = [], env_optional = ["CANVAS_TOKEN", "LGC_WAIT"], creds = ["~/.config/canvas-skill/token"] }
+egress = { hosts = ["*.sjtu.edu.cn"], proxy = "off" }
+budget_ms = 600000
+
+[[lanes]]
+name = "canvas-rest"
+exec = "lanes/canvas_rest.py"
+kinds = ["enum"]
+# "" = kind_by_url 落地形（课程根 URL 判 enum 但无 enum 注入）→ lane 内默认
+# lectures 列讲次；其余值与 FLAG 臂一一对应
+params_gate = { enum = ["lectures", "courses", "files", "announcements", "assignments", ""] }
+needs = { tools = ["canvas-get"], env = [], env_optional = ["CANVAS_TOKEN", "CANVAS_GET"], creds = ["~/.config/canvas-skill/token"] }
+egress = { hosts = ["*.sjtu.edu.cn"], proxy = "off" }
+budget_ms = 120000
+
+[[lanes]]
+name = "canvas-mint"
+exec = "lanes/canvas_mint.py"
+# kinds 含 lecture：routes 的 mint=true 臂是 kind 无约束兜底——kind=lecture
+# 带 mint（如 play-center URL 直喂 engine）同样锁 meta-lane 而非静默下载
+kinds = ["enum", "lecture"]
+# "" = mint 布尔回波臂（routes params={mint=true}）不带 enum 注入的落地形
+params_gate = { enum = ["mint", ""] }
+writes_cred = "canvas-skill"             # meta-lane：铸 jwt/tecl cred value 键
+needs = { tools = ["canvas-get"], env = [], env_optional = ["CANVAS_TOKEN", "CANVAS_GET"], creds = ["~/.config/canvas-skill/token"] }
+egress = { hosts = ["*.sjtu.edu.cn"], proxy = "off" }
+budget_ms = 300000
+
+[[routes]]
+kinds = ["enum"]
+params = { enum = "mint" }
+lanes = ["canvas-mint"]
+
+# 裸课程 ID + --mint：bare_resolve 重写到课程根 URL → kind=enum 但分发层不注
+# enum（壳只认 sjtu host），mint 布尔回波在此锁 meta-lane——否则落 canvas-rest
+# 打讲次表。kinds 无约束：kind=lecture 带 mint（play-center 直喂 engine）同样
+# 锁 meta-lane，绝不静默下载
+[[routes]]
+params = { mint = true }
+lanes = ["canvas-mint"]
+
+# 枚举面只兜"无下载参"的 kind=enum——link-get 对 --lecture/--all 只注值不注
+# kind，kind_by_url 会把课程根 URL 一律判 enum；不设此闸则 'link-get <课>
+# --lecture 2' 被讲次列表臂吃掉（route params "" = param 缺席/空才匹配）；
+# download 同列——裸 ID+--download 落 monolith 让 canvas-get 真下载（壳旁路
+# 只认 sjtu host，bare ID 进不了旁路）
+[[routes]]
+kinds = ["enum"]
+params = { lecture = "", all = "", download = "" }
+lanes = ["canvas-rest"]
+
+# kind=enum 但带下载参（lecture/all 任一非空）→ 下载意图落 monolith
+[[routes]]
+kinds = ["enum"]
+lanes = ["canvas-get"]
+
+[[routes]]
+kinds = ["lecture"]
+lanes = ["canvas-get"]
+
+[monolith]
+lgc_off = false
+argv = ["{url}", "-o", "{artifact_dir}"]
+flag_params = { lecture = "--lecture", camera = "--camera", cover_at = "--cover-at", all = "--all", download = "--download", files = "--files", refresh = "--refresh", no_cache = "--no-cache", cache_ttl = "--cache-ttl" }

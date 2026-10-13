@@ -1,0 +1,2460 @@
+#!/usr/bin/env python3
+# lgc — link-get unified cache layer. Single-file python3-stdlib CLI.
+#
+# COMPAT — append-only contract (finalPlan §4.1 D). This block is the
+# "compiler" for every future change; violating it breaks mixed-version fleets.
+#   1. has/--version/selftest faces are permanent and zero-side-effect; cap
+#      names bind v1 semantics — claiming a cap means the behavior is real.
+#   2. Within PROTO 1: subcommands/flags/get rc classes (0,1,3,4,5,6,7) are
+#      append-only — never removed or re-meaninged; new neg reasons reuse old
+#      rc classes; entries only gains columns (never NOT NULL w/o default).
+#   3. Unknown flag/subcommand → rc2 + usage hard error; unknown ns rejected
+#      against the whitelist table.
+#   4. get never returns an entry failing --satisfies/--require-producer;
+#      unknown or missing fields → not satisfied.
+#   5. Schema break → SCHEMA+1 and index renamed index-v2.sqlite3; a higher
+#      on-disk user_version → refuse all writes, degrade to miss+warn (never
+#      downgrade-write).
+#   6. Normalization change → NORM+1; open auto-rekeys (plaintext row.key →
+#      recompute kh → UPDATE → rename blob dirs; rows lacking plaintext key
+#      are dropped; keep=1 always stores plaintext key).
+#
+# Exit codes: get 0=hit 1=miss 3=neg:notrack 4=neg:deleted
+#             5=neg:unavailable/ratelimited 6=miss+claimed-inflight
+#             7=miss+others'-inflight-timeout
+#             put 0=stored 4=deletion-signature-refused other=cache-layer fault
+#             usage errors 2 everywhere (argparse).
+
+import argparse
+import errno as errno_mod
+import fnmatch
+import hashlib
+import json
+import os
+import random
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+
+PROTO = 1
+IMPL = 0
+SCHEMA = 1  # sqlite user_version
+NORM = 1  # normalization version; bump → auto rekey
+VERSION = f"lgc {PROTO}.{IMPL}"
+
+NS_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+NS_WHITELIST = {"link-get", "zhihu-skill", "canvas-skill"}
+
+SECOND = 1
+MINUTE = 60
+HOUR = 3600
+DAY = 86400
+
+
+# --- positive TTL table (seconds); None = no expiry -----------------------
+def _ttl_table(jwt_ttl):
+    return {
+        "article": 7 * DAY,
+        "wechat": 7 * DAY,
+        "yt:tr": 30 * DAY,
+        "yt:subs": 30 * DAY,
+        "yt:fast": 7 * DAY,
+        "yt:meta": DAY,
+        "yt:text": DAY,
+        "bili:b23": 30 * DAY,
+        "bili:meta": DAY,
+        "bili:subs": 30 * DAY,
+        "bili:text": DAY,
+        "bili:opus": 7 * DAY,
+        "xyzfm:tr": 30 * DAY,
+        "xyzfm:art": 7 * DAY,
+        "media": 30 * DAY,
+        "doc": 30 * DAY,
+        "arxiv": DAY,
+        "arxivtex": DAY,
+        "art": 3 * DAY,
+        "ans": 3 * DAY,
+        "zv": 3 * DAY,
+        "pin": 3 * DAY,
+        "q": DAY,
+        "col": 6 * HOUR,
+        "ppl": DAY,
+        "tecl": 180 * DAY,
+        "jwt": jwt_ttl,
+        "donor": 7 * DAY,
+        "lec": None,
+        "lec-list": 15 * MINUTE,
+        "api": 5 * MINUTE,
+        "src": 10 * MINUTE,
+        "file": None,
+    }
+
+
+DEFAULT_TTL_UNKNOWN = HOUR  # pos ttl for kinds outside the table
+
+# --- negative cache reasons → (default ttl, get rc) ------------------------
+NEG_REASONS = {
+    "deleted": (90 * DAY, 4),
+    "notrack": (DAY, 3),
+    "unavailable": (15 * MINUTE, 5),
+    "ratelimited": (15 * MINUTE, 5),
+    # cred-fp scope: gates only the recorded credential (keyhash carries
+    # '#<cred8>'), lifting itself on rotation; rc stays 5 (append-only class).
+    "auth-expired": (DAY, 5),
+    # lane-level (only on lane:<lane>:<key> entries; lane probe rc1)
+    "tardis-miss": (30 * DAY, 1),
+    "lane-fail": (HOUR, 1),
+}
+LANE_REASONS = {"tardis-miss", "lane-fail"}
+
+# deletion signatures: first 64KB of .md/.txt payloads (and inline values)
+DELSIGNS = (
+    "该内容已被发布者删除",
+    "此内容因违规无法查看",
+    "该内容已被删除",
+    "该回答已被删除",
+    "没有知识存在的荒原",
+)
+DELSIGN_WINDOW = 64 * 1024
+
+# denylist for put --files/--from (D66 exact names + globs on basename)
+DENY_NAMES = {"BBDown.data", "cookie.txt", "cookies.json", ".netrc"}
+DENY_GLOBS = (
+    "*.cookies",
+    ".*",
+    "*.part",
+    "*.tmp",
+    ".lgc-*",
+    ".tardis-*",
+    "*进度*",
+    "*.log",
+)
+
+VALUE_FILE = "__value__"  # >64KB values land here inside the bundle
+REMISS = "remiss"  # eval_row 出局哨兵：回 miss 路径而非递归嵌套
+INFLIGHT_STALE = 6 * HOUR  # marker older than this → stealable
+BREAKER_WINDOW = 600  # ≥3 lane fails within 600s → skip 600s
+BREAKER_FAILS = 3
+TMP_ORPHAN_AGE = HOUR
+BLOB_GRACE = HOUR  # non-current versions younger → keep
+
+# query params stripped during URL normalization (never content-id sources:
+# __biz/mid/idx/BVID/p are extraction inputs and must stay out of this table)
+STRIP_EXACT = {
+    "spm",
+    "spm_id_from",
+    "vd_source",
+    "bbid",
+    "ts",
+    "fbclid",
+    "gclid",
+    "ref",
+    "src",
+    "track",
+    "clicktime",
+    "poc_token",
+    "si",
+    "sn",
+    "chksm",
+    "scene",
+    "srcid",
+    "exportkey",
+    "from",
+}
+STRIP_PREFIX = ("utm_", "share_", "from_", "sharer_")
+
+# capability wordlist (v1) — `lgc has` advertises; connectors veto flags on it
+CAPS_BASE = [
+    "get",
+    "put",
+    "neg",
+    "release",
+    "cat",
+    "lane",
+    "list",
+    "stats",
+    "explain",
+    "key",
+    "keep",
+    "clear",
+    "prune",
+    "has",
+    "selftest",
+    "cred-fp",
+    "into",
+    "claim",
+    "wait",
+    "satisfies",
+    "json",
+    "atomic",
+    "cred",
+    "producer",
+    "require-producer",
+    "delguard",
+    "denylist",
+    "breaker",
+    "reflink",
+    "keep-flag",
+    "value",
+    "value-file",
+    "from",
+    "ttl",
+    "params",
+    "owner-pid",
+    "lane-note",
+    "lane-cred",
+]
+
+# --------------------------------------------------------------------------
+# environment / config
+# --------------------------------------------------------------------------
+
+
+def _env(name):
+    v = os.environ.get(name)
+    return v if v not in (None, "") else None
+
+
+def load_config():
+    cfg = {
+        "max_size_mb": 10240,
+        "max_blob_mb": 256,
+        "max_bundle_mb": 16384,
+        "wait_text": 300,
+        "wait_media": 3600,
+        "jwt_ttl": 1200,
+        "off": 0,
+    }
+    path = _env("LGC_CONFIG") or os.path.expanduser("~/.config/lgc/config")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if k in cfg:
+                    try:
+                        cfg[k] = int(v)
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    envmap = {
+        "LGC_MAX_SIZE": "max_size_mb",
+        "LGC_MAX_BLOB": "max_blob_mb",
+        "LGC_MAX_BUNDLE": "max_bundle_mb",
+        "LGC_CANVAS_JWT_TTL": "jwt_ttl",
+        "LGC_OFF": "off",
+    }
+    for e, k in envmap.items():
+        v = _env(e)
+        if v is not None:
+            try:
+                cfg[k] = int(v)
+            except ValueError:
+                if k == "off":
+                    cfg[k] = 1
+    if _env("LGC_OFF"):
+        cfg["off"] = 1
+    return cfg
+
+
+def cache_home():
+    return _env("LGC_HOME") or os.path.expanduser("~/.cache")
+
+
+def ns_root(ns):
+    return os.path.join(cache_home(), ns)
+
+
+def warn(msg):
+    sys.stderr.write(f"lgc: {msg}\n")
+
+
+def cacheline(msg):
+    sys.stderr.write(f"cache: {msg}\n")
+
+
+def err_name(e):
+    code = getattr(e, "errno", None) or errno_mod.EIO
+    return errno_mod.errorcode.get(code, str(code))
+
+
+# --------------------------------------------------------------------------
+# key normalization (NORM=1)
+# --------------------------------------------------------------------------
+
+
+def _strip_param(k):
+    kl = k.lower()
+    if kl in STRIP_EXACT:
+        return True
+    return any(kl.startswith(p) for p in STRIP_PREFIX)
+
+
+def normalize_url(u):
+    u = u.strip()
+    try:
+        p = urllib.parse.urlsplit(u)
+    except Exception:
+        return u
+    host = (p.hostname or "").lower()
+    if not host:
+        return u
+    scheme = (p.scheme or "https").lower()
+    path = p.path or "/"
+    extra = []
+    if host == "youtu.be":
+        vid = path.strip("/").split("/")[0]
+        host, path = "www.youtube.com", "/watch"
+        extra.append(("v", vid))
+    if host == "m.youtube.com":
+        host = "www.youtube.com"
+    if host == "zhuanlan.zhihu.com" and path.startswith("/p/"):
+        host = "www.zhihu.com"
+    port = ""
+    try:
+        if p.port and p.port not in (80, 443):
+            port = f":{p.port}"
+    except ValueError:
+        pass
+    try:
+        qs = urllib.parse.parse_qsl(p.query, keep_blank_values=True)
+    except Exception:
+        qs = []
+    kept = [(k, v) for k, v in qs if not _strip_param(k)] + extra
+    kept.sort(key=lambda kv: (kv[0], kv[1]))
+    query = urllib.parse.urlencode(kept)
+    return urllib.parse.urlunsplit((scheme, host + port, path, query, ""))
+
+
+def _qparams(u):
+    try:
+        return dict(
+            urllib.parse.parse_qsl(
+                urllib.parse.urlsplit(u).query, keep_blank_values=True
+            )
+        )
+    except Exception:
+        return {}
+
+
+_YT_VID = re.compile(r"(?:[?&]v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
+_YT_BARE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_BVID = re.compile(r"(BV[0-9A-Za-z]{10})")
+_AVID = re.compile(r"\bav(\d{6,})\b", re.IGNORECASE)
+_B23 = re.compile(r"b23\.tv/([^/?#]+)")
+
+
+def _yt_id(raw):
+    m = _YT_VID.search(raw)
+    if m:
+        return m.group(1)
+    if _YT_BARE.match(raw.strip()):
+        return raw.strip()
+    return None
+
+
+def _bili_id_p(raw):
+    m = _BVID.search(raw)
+    bid = m.group(1) if m else None
+    if not bid:
+        m = _AVID.search(raw)
+        if m:
+            bid = "av" + m.group(1)
+    if not bid:
+        return None
+    pm = re.search(r"[?&]p=(\d+)", raw) or re.search(r":p(\d+)$", raw)
+    pn = int(pm.group(1)) if pm else 1
+    return f"{bid}:p{pn}"
+
+
+def extract_id(kind, raw):
+    """Return the canonical id portion for kind, or None to keep raw form."""
+    r = raw.strip()
+    if kind == "wechat":
+        q = _qparams(r)
+        if q.get("__biz") and q.get("mid") and q.get("idx"):
+            return "b{}:m{}:i{}".format(q["__biz"], q["mid"], q["idx"])
+        m = re.search(r"/s/([^/?#]+)", r)
+        if m:
+            return "s:" + m.group(1)
+        return normalize_url(r)
+    if kind in ("yt:meta", "yt:tr", "yt:subs", "yt:text", "yt:fast"):
+        v = _yt_id(r)
+        return v or normalize_url(r)
+    if kind == "bili:b23":
+        m = _B23.search(r)
+        return m.group(1) if m else r
+    if kind in ("bili:meta", "bili:subs", "bili:text"):
+        v = _bili_id_p(r)
+        return v or normalize_url(r)
+    if kind == "bili:opus":
+        m = re.search(r"/opus/(\d+)", r) or re.search(r"^(\d{6,})$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "media":
+        v = _yt_id(r)
+        if v:
+            return v
+        v = _bili_id_p(r)
+        if v:
+            return v
+        return normalize_url(r)
+    if kind == "art":
+        m = re.search(r"/p/(\d+)", r) or re.search(r"^(\d+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "ans":
+        m = re.search(r"/answer/(\d+)", r) or re.search(r"^(\d+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "q":
+        m = re.search(r"/question/(\d+)", r) or re.search(r"^(\d+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "col":
+        m = re.search(r"zhuanlan\.zhihu\.com/([A-Za-z0-9_-]+)/?(?:[?#]|$)", r)
+        if m and m.group(1) != "p":
+            return m.group(1)
+        m = re.search(r"/column/([A-Za-z0-9_-]+)", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "ppl":
+        m = re.search(r"/people/([^/?#]+)", r) or re.search(r"^([^/:\s]+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "zv":
+        m = re.search(r"/zvideo/(\d+)", r) or re.search(r"^(\d+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind == "pin":
+        m = re.search(r"/pin/(\d+)", r) or re.search(r"^(\d+)$", r)
+        return m.group(1) if m else normalize_url(r)
+    if kind in ("arxiv", "arxivtex"):
+        m = re.search(r"(\d{4}\.\d{4,5})(v\d+)?", r)
+        if m:
+            return m.group(1) + (m.group(2) or "")
+        m = re.search(r"([a-z-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?", r)
+        return (m.group(1) + (m.group(2) or "")) if m else r
+    # canvas kinds (tecl/jwt/donor/lec-list/api/src/file/lec) and lane arrive
+    # pre-canonical from the connector — pass through untouched.
+    if "://" in r:
+        return normalize_url(r)
+    return r
+
+
+# every kind lgc understands; kinds may themselves contain ':' (yt:tr) so
+# kind_of must longest-prefix-match this set, not split at the first colon
+KIND_SET = {
+    "article",
+    "wechat",
+    "yt:meta",
+    "yt:tr",
+    "yt:subs",
+    "yt:text",
+    "yt:fast",
+    "bili:b23",
+    "bili:meta",
+    "bili:subs",
+    "bili:text",
+    "bili:opus",
+    "xyzfm:tr",
+    "xyzfm:art",
+    "xyzfm:meta",
+    "media",
+    "doc",
+    "arxiv",
+    "arxivtex",
+    "art",
+    "ans",
+    "q",
+    "col",
+    "ppl",
+    "zv",
+    "pin",
+    "tecl",
+    "jwt",
+    "donor",
+    "lec-list",
+    "api",
+    "src",
+    "file",
+    "lec",
+    "lane",
+}
+
+
+def kind_of(key):
+    best = ""
+    for k in KIND_SET:
+        if key.startswith(k + ":") and len(k) > len(best):
+            best = k
+    if best:
+        return best
+    i = key.find(":")
+    return key[:i] if i > 0 else key
+
+
+def normalize_key(key):
+    """'<kind>:<raw>' → canonical '<kind>:<id>' (lane: recurses inner)."""
+    kind = kind_of(key)
+    if kind == "lane":
+        rest = key[len("lane:") :]
+        lane, _, inner = rest.partition(":")
+        return f"lane:{lane}:{normalize_key(inner)}" if inner else key
+    raw = key[len(kind) + 1 :] if kind else key
+    sfx = ""
+    m = re.search(r"(\+[cf])$", raw)
+    if m and kind in ("ans", "art", "q", "col", "ppl", "zv", "pin"):
+        sfx = m.group(1)
+        raw = raw[:-2]
+    return f"{kind}:{extract_id(kind, raw)}{sfx}"
+
+
+def keyhash(normkey):
+    return hashlib.sha256(("n1|" + normkey).encode("utf-8")).hexdigest()[:24]
+
+
+# --- credential domains (D15): --cred flag wins; this table is the fallback -
+CRED_FILES = {
+    "zhihu": [
+        "~/.config/zhihu-skill/cookie.txt",
+        "~/.config/zhihu-skill/settings.toml",
+    ],
+    "bili": ["~/.config/link-get/cookies/bilibili.txt"],
+    "bili-fallback": ["~/BBDown.data"],
+    "canvas": ["~/.config/canvas-skill/token"],
+    "xyzfm": ["~/.config/xyzfm/token.json"],
+}
+_ZHIHU_KINDS = {"art", "ans", "q", "col", "ppl", "zv", "pin"}
+_BILI_KINDS = {"bili:meta", "bili:subs", "bili:text", "media"}
+_CANVAS_KINDS = {"tecl", "jwt", "donor", "lec-list", "api", "src", "file", "lec"}
+# 只 mint 常量键入 cred 域（token 轮换 lane 账自愈）：tr/art 转写内容与用户
+# 无关，挂 #cred8 会让换 token 平白废掉内容缓存
+_XYZFM_KINDS = {"xyzfm:meta"}
+
+
+def cred_domain(kind):
+    if kind in _ZHIHU_KINDS:
+        return "zhihu"
+    if kind in _BILI_KINDS:
+        return "bili"
+    if kind in _CANVAS_KINDS:
+        return "canvas"
+    if kind in _XYZFM_KINDS:
+        return "xyzfm"
+    return None
+
+
+def cred8_for(domain):
+    files = list(CRED_FILES.get(domain, []))
+    if domain == "bili":
+        primary = os.path.expanduser(files[0])
+        if not os.path.exists(primary):
+            files = CRED_FILES["bili-fallback"]
+    h = hashlib.sha256()
+    found = False
+    for f in files:
+        p = os.path.expanduser(f)
+        try:
+            with open(p, "rb") as fh:
+                data = fh.read()
+            if domain == "canvas":
+                data = data.strip()  # canvas-get tok8 hashes the stripped PAT
+            h.update(data)
+            found = True
+        except OSError:
+            continue
+    return h.hexdigest()[:8] if found else "anon"
+
+
+# writes_cred 自检面：meta-lane 声明的 cred domain 须 ∈ CRED_DOMAINS
+# （bili-fallback 是 bili 的缺件回退别名，不作 writes_cred 目标）；
+# NS_CRED_DOMAIN 是 pack ns ↔ domain 的软对应，仅自检参考不强制
+CRED_DOMAINS = set(CRED_FILES) - {"bili-fallback"}
+NS_CRED_DOMAIN = {"zhihu-skill": "zhihu", "canvas-skill": "canvas"}
+
+
+# --- cred-scoped lane accounting ---------------------------------------------
+# Auth-class failures bind the credential fingerprint, never the shared lane:
+# a dead cred must not trip the breaker for other creds. Scoped rows live in
+# breakers under '<lane>#<cred8>' / lane-negs under 'lane:<lane>:<inner>#<c8>'
+# and die automatically on credential rotation (new cred8 → new scope).
+def _is_auth_reason(r):
+    return (r or "").replace("_", "-") in {"auth", "auth-expired", "auth-failed"}
+
+
+def _lane_scope(args):
+    """→ cred fingerprint for this lane op: explicit --cred wins, else derive
+    from the key's cred domain (same rule as _full_key). None = unscoped."""
+    cred = getattr(args, "cred", None)
+    if cred:
+        return cred
+    key = getattr(args, "key", None)
+    if key:
+        dom = cred_domain(kind_of(key))
+        if dom:
+            return cred8_for(dom)
+    return None
+
+
+def _lane_write_scope(args):
+    """Scope for *recording* a failure: explicit --cred always scopes; a
+    derived cred scopes only for auth-class reasons — transient failures
+    stay lane-wide so keyless probes still see the shared breaker."""
+    scope = _lane_scope(args)
+    if not scope:
+        return None
+    if getattr(args, "cred", None) or _is_auth_reason(getattr(args, "reason", None)):
+        return scope
+    return None
+
+
+# --------------------------------------------------------------------------
+# storage primitives
+# --------------------------------------------------------------------------
+
+
+def ensure_dirs(root):
+    for sub in ("", "blobs", "tmp", "locks", "inflight"):
+        os.makedirs(os.path.join(root, sub), mode=0o700, exist_ok=True)
+    try:
+        os.chmod(root, 0o700)
+    except OSError:
+        pass
+
+
+def blob_base(root, kh):
+    return os.path.join(root, "blobs", kh[:2], kh)
+
+
+def lock_path(root, kh):
+    return os.path.join(root, "locks", kh + ".lock")
+
+
+def inflight_dir(root, kh):
+    return os.path.join(root, "inflight", kh + ".d")
+
+
+class KeyLock:
+    """fcntl.flock on locks/<kh>.lock; bounded retry; never GC'd."""
+
+    def __init__(self, root, kh, tries=25):
+        self.path = lock_path(root, kh)
+        self.tries = tries
+        self.fd = None
+
+    def acquire(self):
+        import fcntl
+
+        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        for _ in range(self.tries):
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except OSError:
+                time.sleep(1)
+        return False
+
+    def release(self):
+        if self.fd is None:
+            return
+        try:
+            import fcntl
+
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+            os.close(self.fd)
+        except OSError:
+            pass
+        self.fd = None
+
+
+def _connect(index_path):
+    db = sqlite3.connect(index_path, timeout=5)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=5000")
+    return db
+
+
+def _create_schema(db):
+    db.executescript("""
+    CREATE TABLE IF NOT EXISTS entries(
+      key TEXT PRIMARY KEY, kh TEXT UNIQUE, kind TEXT,
+      status TEXT, reason TEXT, lane TEXT, ver INTEGER,
+      value BLOB, files TEXT, params TEXT, cred TEXT,
+      created REAL, expires REAL, hits INTEGER, last_hit REAL,
+      bytes INTEGER, keep INTEGER, partial INTEGER, schema INTEGER,
+      producer TEXT);
+    CREATE TABLE IF NOT EXISTS counters(name TEXT PRIMARY KEY, n INTEGER);
+    CREATE TABLE IF NOT EXISTS breakers(lane TEXT PRIMARY KEY,
+                                      fails INTEGER, last_fail REAL);
+    """)
+    db.execute(f"PRAGMA user_version={SCHEMA}")
+    db.execute("INSERT OR IGNORE INTO counters(name,n) VALUES('norm_version',?)", (0,))
+    db.commit()
+
+
+def _rebuild(root, index_path):
+    """index corrupt → reindex from blobs/*/v*/manifest.json (D17)."""
+    warn("index corrupt; rebuilding from blob manifests")
+    try:
+        db = sqlite3.connect(index_path)
+        db.close()
+    except Exception:
+        pass
+    for suf in ("", "-wal", "-shm"):
+        try:
+            os.rename(
+                index_path + suf, index_path + f".corrupt-{int(time.time())}{suf}"
+            )
+        except OSError:
+            pass
+    db = _connect(index_path)
+    _create_schema(db)
+    bdir = os.path.join(root, "blobs")
+    quar = os.path.join(root, "quarantine")
+    for hh in sorted(os.listdir(bdir)) if os.path.isdir(bdir) else []:
+        hhd = os.path.join(bdir, hh)
+        if not os.path.isdir(hhd):
+            continue
+        for kh in sorted(os.listdir(hhd)):
+            kdir = os.path.join(bdir, hh, kh)
+            if not os.path.isdir(kdir):
+                continue
+            for v in sorted(
+                os.listdir(kdir),
+                key=lambda x: (
+                    int(x[1:]) if x.startswith("v") and x[1:].isdigit() else -1
+                ),
+            ):
+                vdir = os.path.join(kdir, v)
+                if not (v.startswith("v") and os.path.isdir(vdir)):
+                    continue
+                mpath = os.path.join(vdir, "manifest.json")
+                try:
+                    with open(mpath, encoding="utf-8") as f:
+                        m = json.load(f)
+                    key = m["key"]
+                    if not key:
+                        raise ValueError("no key")
+                    if not m.get("files") or m.get("files") in ("[]", []):
+                        continue  # inline-value/neg 行 manifest 无可恢复载荷
+                    cols = [
+                        "key",
+                        "kh",
+                        "kind",
+                        "status",
+                        "reason",
+                        "lane",
+                        "ver",
+                        "files",
+                        "params",
+                        "cred",
+                        "created",
+                        "expires",
+                        "hits",
+                        "last_hit",
+                        "bytes",
+                        "keep",
+                        "partial",
+                        "schema",
+                        "producer",
+                    ]
+                    row = {c: m.get(c) for c in cols}
+                    row["kh"] = kh
+                    row["key"] = key
+                    row["ver"] = int(v[1:])
+                    row["value"] = None
+                    db.execute(
+                        "INSERT OR REPLACE INTO entries({}) VALUES({})".format(
+                            ",".join(cols), ",".join("?" * len(cols))
+                        ),
+                        [row[c] for c in cols],
+                    )
+                except Exception:
+                    os.makedirs(quar, mode=0o700, exist_ok=True)
+                    try:
+                        os.rename(vdir, os.path.join(quar, f"{kh}-{v}"))
+                    except OSError:
+                        pass
+    db.commit()
+    return db
+
+
+def open_db(root):
+    """→ (db, writable). Higher user_version → writable=False (degrade)."""
+    index = os.path.join(root, "index.sqlite3")
+    try:
+        db = _connect(index)
+        ok = db.execute("PRAGMA integrity_check(1)").fetchone()[0]
+        if ok != "ok":
+            db.close()
+            db = _rebuild(root, index)
+    except sqlite3.DatabaseError:
+        db = _rebuild(root, index)
+    uv = db.execute("PRAGMA user_version").fetchone()[0]
+    if uv == 0:
+        _create_schema(db)
+    elif uv > SCHEMA:
+        warn(f"index user_version={uv} > known {SCHEMA}; writes refused")
+        return db, False
+    return db, True
+
+
+def rekey_if_needed(db, root):
+    """NORM bump → recompute kh from plaintext keys, rename blob dirs."""
+    row = db.execute("SELECT n FROM counters WHERE name='norm_version'").fetchone()
+    stored = row[0] if row else NORM
+    if stored == NORM or stored > NORM:
+        return  # equal: nothing to do; newer on disk: lookups simply miss
+    for key, oldkh, cred in db.execute("SELECT key,kh,cred FROM entries").fetchall():
+        if not key or key.startswith("\x00"):
+            db.execute("DELETE FROM entries WHERE kh=?", (oldkh,))
+            continue
+        # _full_key hashes normalize_key + '#' + cred; the suffix rides inside
+        # the stored key and normalize_url would eat it as a URL fragment —
+        # split it off, re-normalize the bare key, then re-append the cred
+        # (column is authoritative; appended even if an older row lacks it).
+        bare, tail = key, ""
+        if cred:
+            tail = "#" + cred
+            if key.endswith(tail):
+                bare = key[: -len(tail)]
+        newkh = keyhash(normalize_key(bare) + tail)
+        if newkh == oldkh:
+            continue
+        clash = db.execute("SELECT 1 FROM entries WHERE kh=?", (newkh,)).fetchone()
+        if clash:
+            db.execute("DELETE FROM entries WHERE kh=?", (oldkh,))
+            continue
+        db.execute("UPDATE entries SET kh=? WHERE kh=?", (newkh, oldkh))
+        old_b, new_b = blob_base(root, oldkh), blob_base(root, newkh)
+        if os.path.isdir(old_b):
+            try:
+                os.makedirs(os.path.dirname(new_b), mode=0o700, exist_ok=True)
+                os.rename(old_b, new_b)
+            except OSError:
+                pass
+    db.execute(
+        "INSERT OR REPLACE INTO counters(name,n) VALUES('norm_version',?)", (NORM,)
+    )
+    db.commit()
+
+
+def bump(db, name, n=1):
+    try:
+        db.execute(
+            "INSERT INTO counters(name,n) VALUES(?,?) "
+            "ON CONFLICT(name) DO UPDATE SET n=n+?",
+            (name, n, n),
+        )
+        db.commit()
+    except sqlite3.Error:
+        pass
+
+
+# --- copy helpers: reflink → copy2, never hardlink -------------------------
+
+
+def _copy_file(src, dst):
+    try:
+        if sys.platform == "darwin":
+            r = subprocess.run(["cp", "-c", src, dst], capture_output=True, timeout=600)
+            if r.returncode == 0:
+                return
+        else:
+            r = subprocess.run(
+                ["cp", "--reflink=auto", "-p", src, dst],
+                capture_output=True,
+                timeout=600,
+            )
+            if r.returncode == 0:
+                return
+    except (OSError, subprocess.SubprocessError):
+        pass
+    shutil.copy2(src, dst)
+
+
+def denied_name(name):
+    b = os.path.basename(name)
+    if b in DENY_NAMES:
+        return True
+    return any(fnmatch.fnmatch(b, g) for g in DENY_GLOBS)
+
+
+def _has_delsign_bytes(data):
+    try:
+        t = data[:DELSIGN_WINDOW].decode("utf-8", errors="replace")
+    except Exception:
+        return False
+    return any(s in t for s in DELSIGNS)
+
+
+def file_has_delsign(path):
+    try:
+        with open(path, "rb") as f:
+            return _has_delsign_bytes(f.read(DELSIGN_WINDOW))
+    except OSError:
+        return False
+
+
+# --- inflight single-flight -------------------------------------------------
+
+
+def _pid_alive(pid):
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _read_owner(d):
+    try:
+        with open(os.path.join(d, "owner"), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _write_owner(d, pid):
+    own = {
+        "pid": pid,
+        "nonce": f"{random.getrandbits(32):x}",
+        "argv": " ".join(sys.argv[:4]),
+        "ts": time.time(),
+    }
+    tmp = os.path.join(d, ".owner.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(own, f)
+    os.rename(tmp, os.path.join(d, "owner"))
+    return own
+
+
+def inflight_claim(root, kh, pid):
+    """→ ('claimed', owner) | ('held', owner|None). Steals dead/stale markers."""
+    d = inflight_dir(root, kh)
+    try:
+        os.mkdir(d)
+        return "claimed", _write_owner(d, pid)
+    except FileExistsError:
+        pass
+    except OSError:
+        return "held", None
+    own = _read_owner(d)
+    stale = False
+    if own and own.get("pid") and not _pid_alive(int(own["pid"])):
+        stale = True
+    try:
+        if time.time() - os.path.getmtime(d) > INFLIGHT_STALE:
+            stale = True
+    except OSError:
+        stale = True
+    if stale:
+        try:
+            shutil.rmtree(d, ignore_errors=True)
+            os.mkdir(d)
+            return "claimed", _write_owner(d, pid)
+        except OSError:
+            return "held", own
+    return "held", own
+
+
+def inflight_release(root, kh, pid):
+    """只清自己的 marker：owner 不可读/pid 不匹配一律不动（mkdir→owner
+    窗口期的他人新认领不得被拆；死锁靠认领侧 stale 偷锁兜）。"""
+    d = inflight_dir(root, kh)
+    own = _read_owner(d)
+    try:
+        opid = int(own["pid"]) if own and own.get("pid") is not None else None
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if opid is None or opid != pid:
+        return False
+    shutil.rmtree(d, ignore_errors=True)
+    return True
+
+
+# --- entries helpers --------------------------------------------------------
+
+
+def _row_by_kh(db, kh):
+    return db.execute("SELECT * FROM entries WHERE kh=?", (kh,)).fetchone()
+
+
+_COLS = [
+    "key",
+    "kh",
+    "kind",
+    "status",
+    "reason",
+    "lane",
+    "ver",
+    "value",
+    "files",
+    "params",
+    "cred",
+    "created",
+    "expires",
+    "hits",
+    "last_hit",
+    "bytes",
+    "keep",
+    "partial",
+    "schema",
+    "producer",
+]
+
+
+def _rowdict(row):
+    return dict(zip(_COLS, row)) if row else None
+
+
+def _files(entry):
+    try:
+        return json.loads(entry["files"] or "[]")
+    except Exception:
+        return []
+
+
+def _params(entry):
+    try:
+        return json.loads(entry["params"] or "{}")
+    except Exception:
+        return {}
+
+
+def _blob_file(root, entry, f):
+    return os.path.join(blob_base(root, entry["kh"]), f"v{entry['ver']}", f["relpath"])
+
+
+def _entry_files_ok(root, entry):
+    fs = _files(entry)
+    if not fs:
+        return True, []
+    missing = []
+    for f in fs:
+        p = _blob_file(root, entry, f)
+        try:
+            if os.path.getsize(p) != f["size"]:
+                missing.append(f)
+        except OSError:
+            missing.append(f)
+    return (len(missing) == 0), missing
+
+
+def _satisfied(entry, req):
+    """D5: unknown/missing fields → not satisfied. Returns bool."""
+    if not req:
+        return True
+    params = _params(entry)
+    files = _files(entry)
+    known = ("max_height", "langs", "camera")
+    for k in req:
+        # 通用等值臂（arxivtex mode/section/修饰旗标等 pack 自定义断言键
+        # 走此臂，不必进 known 白名单）：entry params 同名键等值才算满足；
+        # 缺席（None）或异值 → not satisfied（D5 缺场即不满足平价）。
+        if k not in known and params.get(k) != req[k]:
+            return False
+    if "max_height" in req:
+        try:
+            reqh = int(req["max_height"])
+            h = params.get("height")
+            cap = params.get("req_cap")
+            if h is None or cap is None:
+                return False
+            if not (int(h) <= reqh <= int(cap)):
+                return False
+        except (TypeError, ValueError):
+            return False
+    if "langs" in req:
+        langs = req["langs"]
+        obt = params.get("langs_obtained")
+        known = params.get("subs_known")
+        if (
+            not isinstance(langs, list)
+            or not isinstance(obt, list)
+            or not isinstance(known, list)
+        ):
+            return False
+        for lang in langs:
+            if not isinstance(lang, str):
+                return False
+            if lang in obt:
+                continue
+            if lang not in known:
+                continue  # proven absent by meta
+            return False  # exists upstream but not in bundle
+    if "camera" in req:
+        c = req["camera"]
+        if c == "all":
+            if not params.get("has_all"):
+                return False
+        elif c == "auto":
+            if not any(f.get("kind") == "screen" for f in files):
+                return False
+        else:
+            try:
+                n = int(c)
+            except (TypeError, ValueError):
+                return False
+            if not any(f.get("viewNum") == n for f in files):
+                return False
+    return True
+
+
+def _producer_ok(entry, req):
+    """req = 'name@min'; entry.producer 'name@int' must match name, int≥min."""
+    if not req:
+        return True
+    prod = entry.get("producer") or ""
+    pn, _, pv = prod.partition("@")
+    rn, _, rv = req.partition("@")
+    if not pn or pn != rn:
+        return False
+    try:
+        return int(pv or 0) >= int(rv or 0)
+    except ValueError:
+        return False
+
+
+def _write_manifest(vdir, rowdict_):
+    m = dict(rowdict_)
+    m["value"] = None
+    tmp = os.path.join(vdir, ".manifest.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(m, f, ensure_ascii=False)
+    os.rename(tmp, os.path.join(vdir, "manifest.json"))
+    try:
+        os.chmod(os.path.join(vdir, "manifest.json"), 0o400)
+    except OSError:
+        pass
+
+
+def _total_bytes(db):
+    r = db.execute(
+        "SELECT COALESCE(SUM(bytes),0) FROM entries WHERE status='pos'"
+    ).fetchone()
+    return r[0] or 0
+
+
+def _delete_entry(root, db, entry):
+    for v in (
+        os.listdir(blob_base(root, entry["kh"]))
+        if os.path.isdir(blob_base(root, entry["kh"]))
+        else []
+    ):
+        shutil.rmtree(os.path.join(blob_base(root, entry["kh"]), v), ignore_errors=True)
+    shutil.rmtree(blob_base(root, entry["kh"]), ignore_errors=True)
+    db.execute("DELETE FROM entries WHERE kh=?", (entry["kh"],))
+    db.commit()
+
+
+def _evict_to_fit(root, db, max_bytes):
+    total = _total_bytes(db)
+    if total <= max_bytes:
+        return
+    rows = db.execute(
+        "SELECT kh,key,bytes,keep FROM entries WHERE status='pos' "
+        "ORDER BY COALESCE(last_hit,created) ASC"
+    ).fetchall()
+    for kh, key, bts, keep in rows:
+        if total <= max_bytes:
+            break
+        if keep:
+            continue
+        if os.path.isdir(inflight_dir(root, kh)):
+            continue  # live fetch in progress
+        lk = KeyLock(root, kh, tries=1)
+        if not lk.acquire():
+            continue
+        try:
+            row = _rowdict(_row_by_kh(db, kh))
+            if row:
+                _delete_entry(root, db, row)
+                total -= bts or 0
+        finally:
+            lk.release()
+
+
+def _statfs_free(path):
+    try:
+        st = os.statvfs(path)
+        return st.f_bavail * st.f_frsize
+    except OSError:
+        return None
+
+
+# --------------------------------------------------------------------------
+# commands
+# --------------------------------------------------------------------------
+
+
+def _full_key(args):
+    """Normalize + apply cred domain. → (normkey, kh, cred)."""
+    key = args.key
+    kind = kind_of(key)
+    cred = None
+    if kind != "lane":
+        dom = cred_domain(kind)
+        explicit = getattr(args, "cred", None)
+        if explicit:
+            cred = explicit
+        elif dom:
+            cred = cred8_for(dom)
+    norm = normalize_key(key)
+    if cred and not norm.endswith("#" + cred):
+        norm = f"{norm}#{cred}"
+    return norm, keyhash(norm), cred
+
+
+def cmd_get(args, cfg):
+    ns = args.ns
+    root = ns_root(ns)
+    if cfg["off"]:
+        cacheline("off")
+        return 1
+    ensure_dirs(root)
+    norm, kh, _ = _full_key(args)
+    refresh = bool(_env("LGC_REFRESH"))
+    db, writable = open_db(root)
+    try:
+        rekey_if_needed(db, root)
+    except sqlite3.Error:
+        pass
+    owner_pid = int(getattr(args, "owner_pid", 0) or 0) or os.getppid()
+
+    def miss_path():
+        if writable:
+            bump(db, "misses")
+        marker = os.path.isdir(inflight_dir(root, kh))
+        if args.claim:
+            claimed, own = inflight_claim(root, kh, owner_pid)
+            if claimed == "claimed":
+                cacheline("miss")
+                return 6
+            marker = True
+        else:
+            own = _read_owner(inflight_dir(root, kh))
+        if not marker:
+            cacheline("miss")
+            return 1
+        # someone else holds the marker: wait within budget
+        if own and own.get("pid"):
+            wait_age = max(0, int(time.time() - (own.get("ts") or 0)))
+            cacheline(f"wait({own['pid']},{wait_age}s)")
+        deadline = time.time() + max(0, args.wait)
+        while time.time() < deadline:
+            time.sleep(1)
+            row = _rowdict(_row_by_kh(db, kh)) if writable else None
+            if row:
+                r = eval_row(row)  # 同一 deadline 内迭代复评，不递归
+                if r != REMISS:
+                    return r
+            if not os.path.isdir(inflight_dir(root, kh)):
+                break
+        cacheline("miss")
+        return 7 if os.path.isdir(inflight_dir(root, kh)) else 1
+
+    def eval_row(entry):
+        if entry["schema"] != SCHEMA:
+            _delete_entry(root, db, entry)
+            return REMISS
+        exp = entry["expires"]
+        if exp is not None and exp < time.time() and not entry["keep"]:
+            _delete_entry(root, db, entry)
+            return REMISS
+        if entry["status"] == "neg":
+            bump(db, "neg_hits")
+            reason = entry["reason"] or "unavailable"
+            age = max(0, int(time.time() - (entry["created"] or 0)))
+            cacheline(f"neg:{reason}({age}s)")
+            if args.json:
+                # rc5 is shared across reasons — --json lets the exact
+                # reason (ratelimited/auth-expired/…) survive the ABI.
+                sys.stdout.write(
+                    json.dumps({"status": "neg", "reason": reason, "age": age}) + "\n"
+                )
+            return NEG_REASONS.get(reason, (0, 5))[1]
+        # pos
+        ok, missing = _entry_files_ok(root, entry)
+        if not ok:
+            if entry["keep"] and len(missing) < len(_files(entry)):
+                pass  # keep=1 → partial hit (D27)
+            else:
+                if not entry["keep"]:
+                    _delete_entry(root, db, entry)
+                return REMISS
+        try:
+            req = json.loads(args.satisfies) if args.satisfies else None
+        except Exception:
+            req = {"__bad__": 1}
+        if req and not _satisfied(entry, req):
+            return REMISS
+        if not _producer_ok(entry, args.require_producer):
+            _delete_entry(root, db, entry)
+            return REMISS
+        # on a hit we materialize into --into or list blob paths
+        paths = []
+        if args.into:
+            ok2, out = _materialize(
+                root, entry, args.into, keep_partial=bool(entry["keep"])
+            )
+            if not ok2:
+                cacheline("err(materialize)")
+                return 1
+            paths = out
+        else:
+            paths = [_blob_file(root, entry, f) for f in _files(entry)]
+        try:
+            db.execute(
+                "UPDATE entries SET hits=hits+1,last_hit=? WHERE kh=?",
+                (time.time(), kh),
+            )
+            db.commit()
+        except sqlite3.Error:
+            pass  # SQLITE_FULL → skip count, deliver
+        bump(db, "hits")
+        lane = entry["lane"] or "-"
+        age = max(0, int(time.time() - (entry["created"] or 0)))
+        cacheline(f"hit({lane},{age}s)")
+        if args.json:
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "status": "hit",
+                        "lane": entry["lane"],
+                        "age": age,
+                        "paths": paths,
+                        "files": _files(entry),
+                        "params": _params(entry),
+                        "producer": entry["producer"],
+                    }
+                )
+                + "\n"
+            )
+        elif entry["value"] is not None:
+            v = entry["value"]
+            sys.stdout.buffer.write(v if isinstance(v, bytes) else str(v).encode())
+            if not str(v).endswith("\n"):
+                sys.stdout.buffer.write(b"\n")
+        elif any(f["name"] == VALUE_FILE for f in _files(entry)):
+            f = next(f for f in _files(entry) if f["name"] == VALUE_FILE)
+            with open(_blob_file(root, entry, f), "rb") as fh:
+                shutil.copyfileobj(fh, sys.stdout.buffer)
+        else:
+            for p in paths:
+                sys.stdout.write(p + "\n")
+        return 0
+
+    row = None if (refresh or not writable) else _rowdict(_row_by_kh(db, kh))
+    if row:
+        r = eval_row(row)
+        if r != REMISS:
+            return r
+    return miss_path()
+
+
+def _materialize(root, entry, into, keep_partial=False):
+    """Two-phase (D18): stage all → verify sizes → rename into place."""
+    os.makedirs(into, exist_ok=True)
+    stage = os.path.join(into, f".lgc-mat-{os.getpid()}")
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        os.makedirs(stage)
+    except OSError as e:
+        warn(f"materialize: {e}")
+        return False, []
+    placed, staged = [], []
+    files = _files(entry)
+    if keep_partial:
+        files = [f for f in files if os.path.exists(_blob_file(root, entry, f))]
+        lost = [f["name"] for f in _files(entry) if f not in files]
+        if lost:
+            warn(f"keep=1 bundle missing {len(lost)} file(s): {','.join(lost)}")
+    backups = []
+    try:
+        for f in files:
+            rel = f["relpath"]
+            if not _rel_ok(rel):
+                raise OSError(f"unsafe relpath {rel!r}")
+            dest = os.path.join(into, rel)
+            if os.path.lexists(dest):
+                warn(f"materialize: overwrite {dest}")
+            src = _blob_file(root, entry, f)
+            st = os.path.join(stage, rel)
+            os.makedirs(os.path.dirname(st), exist_ok=True)
+            _copy_file(src, st)
+            if os.path.getsize(st) != f["size"]:
+                msg = f"size mismatch on {rel}"
+                raise OSError(msg)
+            staged.append((st, dest))
+        for i, (st, dest) in enumerate(staged):
+            os.makedirs(os.path.dirname(dest) or into, exist_ok=True)
+            bkp = None
+            if os.path.lexists(dest):
+                bkp = os.path.join(stage, f".pre-{i}")
+                os.rename(dest, bkp)  # 旧文件让位进 stage，回滚可还原
+            os.rename(st, dest)
+            try:
+                os.chmod(dest, 0o644)  # blobs are 400; delivered files u+w
+            except OSError:
+                pass
+            backups.append((dest, bkp))
+            placed.append(dest)
+        shutil.rmtree(stage, ignore_errors=True)
+        return True, placed
+    except (OSError, shutil.Error) as e:
+        warn(f"materialize failed: {e}")
+        for dest, bkp in backups:
+            try:
+                if os.path.exists(dest):
+                    os.remove(dest)
+                if bkp and os.path.exists(bkp):
+                    os.rename(bkp, dest)
+            except OSError:
+                pass
+        shutil.rmtree(stage, ignore_errors=True)
+        return False, []
+
+
+def _rel_ok(rel):
+    """relpath 防逃逸：拒绝对路径与含 .. 的归一化结果。"""
+    if os.path.isabs(rel):
+        return False
+    n = os.path.normpath(rel)
+    return n != ".." and not n.startswith(".." + os.sep)
+
+
+def _collect_files(paths, from_dir):
+    """→ list of (abspath, relpath); denylist applied on basename."""
+    out = []
+    if from_dir:
+        for dp, _, fns in os.walk(from_dir):
+            for fn in fns:
+                ap = os.path.join(dp, fn)
+                rel = os.path.relpath(ap, from_dir)
+                out.append((ap, rel))
+    for p in paths or []:
+        out.append((p, os.path.basename(p)))
+    return [
+        (a, r)
+        for a, r in out
+        if os.path.isfile(a)
+        and not os.path.islink(a)
+        and not denied_name(r)
+        and _rel_ok(r)
+    ]
+
+
+def cmd_put(args, cfg):
+    _ns, root = args.ns, ns_root(args.ns)
+    if cfg["off"]:
+        cacheline("off")
+        return 0
+    ensure_dirs(root)
+    norm, kh, cred = _full_key(args)
+    kind = kind_of(args.key)
+    db, writable = open_db(root)
+    if not writable:
+        warn("put refused: index newer than lgc")
+        return 1
+    try:
+        rekey_if_needed(db, root)
+    except sqlite3.Error:
+        pass
+    lk = KeyLock(root, kh)
+    if not lk.acquire():
+        warn(f"put: lock busy, skipping {args.key}")
+        return 1
+    vtmp = None
+    try:
+        # ---- payload gathering ----------------------------------------
+        value = args.value
+        vf = getattr(args, "value_file", None)
+        if value is None and vf:
+            try:
+                if vf == "-":
+                    value = sys.stdin.read()
+                else:
+                    with open(vf, encoding="utf-8") as fh:
+                        value = fh.read()
+            except OSError as e:
+                warn(f"value-file: {e}")
+                return 1
+        if value is not None and _has_delsign_bytes(
+            value.encode("utf-8")[:DELSIGN_WINDOW]
+        ):
+            return 4
+        pairs = _collect_files(args.files, args.from_dir)
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            vtmp = os.path.join(root, "tmp", f"value-{os.getpid()}.bin")
+            with open(vtmp, "wb") as f:
+                f.write(value.encode("utf-8"))
+            pairs.append((vtmp, VALUE_FILE))
+            value = None
+        kept, denied, toolarge = [], [], []
+        max_blob = cfg["max_blob_mb"] * 1024 * 1024
+        total = 0
+        for ap, rel in pairs:
+            sz = os.path.getsize(ap)
+            if denied_name(rel):
+                denied.append(rel)
+                continue
+            if sz <= 0 and os.path.basename(rel) != VALUE_FILE:
+                denied.append(rel)
+                continue
+            if not args.atomic and sz > max_blob:
+                toolarge.append(rel)
+                continue
+            kept.append((ap, rel, sz))
+            total += sz
+        if denied:
+            warn("denylist dropped: {}".format(",".join(denied)))
+        if toolarge:
+            warn("over max_blob_mb dropped: {}".format(",".join(toolarge)))
+        if args.atomic and total > cfg["max_bundle_mb"] * 1024 * 1024:
+            warn(f"bundle {total // 1048576}MB > max_bundle_mb; whole put refused")
+            cacheline("err(bundle-too-big)")
+            return 1
+        if value is None and not kept:
+            warn(f"put: nothing admissible for {args.key}")
+            return 1
+        # deletion signature on text payloads
+        for ap, rel, _ in kept:
+            if (
+                rel.endswith((".md", ".txt")) or os.path.basename(rel) == VALUE_FILE
+            ) and file_has_delsign(ap):
+                return 4
+        # statfs pre-check: free ≥ need × 1.1
+        need = int(total * 1.1) + 1
+        free = _statfs_free(root)
+        if free is not None and free < need:
+            warn(f"put: ENOSPC (need {need} free {free})")
+            cacheline("err(ENOSPC)")
+            return 1
+        # ---- stage + rename --------------------------------------------
+        stage = os.path.join(root, "tmp", f"{kh}.{os.getpid()}")
+        shutil.rmtree(stage, ignore_errors=True)
+        os.makedirs(stage)
+        try:
+            fmeta = _files_meta(args.params)
+            files = []
+            for ap, rel, sz in kept:
+                dst = os.path.join(stage, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                _copy_file(ap, dst)
+                try:
+                    os.chmod(dst, 0o400)
+                except OSError:
+                    pass
+                fm = {"name": os.path.basename(rel), "relpath": rel, "size": sz}
+                fm.update(fmeta.get(os.path.basename(rel), {}))
+                files.append(fm)
+            seq = _next_seq(root, db, kh)
+            bdir = blob_base(root, kh)
+            os.makedirs(bdir, mode=0o700, exist_ok=True)
+            vdir = os.path.join(bdir, f"v{seq}")
+            os.rename(stage, vdir)
+        except (OSError, shutil.Error) as e:
+            shutil.rmtree(stage, ignore_errors=True)
+            warn(f"put: {e}")
+            cacheline(f"err({err_name(e)})")
+            return 1
+        # ---- row ---------------------------------------------------------
+        ttl = args.ttl
+        if ttl is None:
+            env_ttl = _env("LGC_TTL")
+            ttl = int(env_ttl) if env_ttl and env_ttl.isdigit() else None
+        if ttl is None:
+            ttl = _ttl_table(cfg["jwt_ttl"]).get(kind, DEFAULT_TTL_UNKNOWN)
+        keep = 1 if args.keep else 0
+        now = time.time()
+        expires = None if (keep or ttl is None) else now + ttl
+        old = _row_by_kh(db, kh)
+        hits = old[13] if old else 0
+        params = args.params or "{}"
+        store_key = (
+            norm if (keep or _env("LGC_STORE_KEY") != "0") else f"\x00kh:{kh}"
+        )  # opaque placeholder, not a key
+        rowd = {
+            "key": store_key,
+            "kh": kh,
+            "kind": kind,
+            "status": "pos",
+            "reason": None,
+            "lane": args.lane,
+            "ver": seq,
+            "value": value,
+            "files": json.dumps(files, ensure_ascii=False),
+            "params": params,
+            "cred": cred,
+            "created": now,
+            "expires": expires,
+            "hits": hits,
+            "last_hit": None,
+            "bytes": total + (len(value.encode()) if value else 0),
+            "keep": keep,
+            "partial": 1 if toolarge else 0,
+            "schema": SCHEMA,
+            "producer": args.producer,
+        }
+        cols = _COLS
+        db.execute(
+            "INSERT OR REPLACE INTO entries({}) VALUES({})".format(
+                ",".join(cols), ",".join("?" * len(cols))
+            ),
+            [rowd[c] for c in cols],
+        )
+        db.commit()
+        try:
+            _write_manifest(vdir, rowd)
+        except OSError as e:
+            warn(f"manifest: {e}")
+        bump(db, "puts")
+        try:
+            _evict_to_fit(root, db, cfg["max_size_mb"] * 1024 * 1024)
+        except Exception:
+            pass
+        if random.random() < 0.02:
+            try:
+                _prune_ns(root, cfg, dead_cred=False)
+            except Exception:
+                pass
+        return 0
+    finally:
+        if vtmp:
+            try:
+                os.remove(vtmp)
+            except OSError:
+                pass
+        inflight_release(
+            root, kh, int(getattr(args, "owner_pid", 0) or 0) or os.getppid()
+        )
+        lk.release()
+
+
+def _files_meta(params_json):
+    try:
+        p = json.loads(params_json or "{}")
+        fm = p.get("files_meta")
+        return fm if isinstance(fm, dict) else {}
+    except Exception:
+        return {}
+
+
+def _next_seq(root, db, kh):
+    bdir = blob_base(root, kh)
+    fs_max = 0
+    if os.path.isdir(bdir):
+        for v in os.listdir(bdir):
+            if v.startswith("v") and v[1:].isdigit():
+                fs_max = max(fs_max, int(v[1:]))
+    row = _row_by_kh(db, kh)
+    db_max = row[6] if row else 0
+    return max(fs_max, db_max or 0) + 1
+
+
+def cmd_neg(args, cfg):
+    root = ns_root(args.ns)
+    if cfg["off"]:
+        cacheline("off")
+        return 0
+    if not args.key:
+        return 0
+    ensure_dirs(root)
+    norm, kh, cred = _full_key(args)
+    kind = kind_of(args.key)
+    inflight_release(root, kh, int(getattr(args, "owner_pid", 0) or 0) or os.getppid())
+    if kind not in _ttl_table(cfg["jwt_ttl"]) and args.ttl is None and kind != "lane":
+        warn(f"neg: unknown kind {kind!r} requires --ttl")
+        return 1
+    db, writable = open_db(root)
+    if not writable:
+        return 0
+    reason = args.reason
+    ttl = args.ttl if args.ttl is not None else NEG_REASONS.get(reason, (900, 5))[0]
+    old = _rowdict(_row_by_kh(db, kh))
+    if (
+        old
+        and old["status"] == "pos"
+        and (old["expires"] is None or old["expires"] > time.time())
+    ):
+        return 0  # never cover live pos
+    now = time.time()
+    rowd = {
+        "key": norm if _env("LGC_STORE_KEY") != "0" else f"\x00kh:{kh}",
+        "kh": kh,
+        "kind": kind,
+        "status": "neg",
+        "reason": reason,
+        "lane": None,
+        "ver": 0,
+        "value": None,
+        "files": "[]",
+        "params": "{}",
+        "cred": cred,
+        "created": now,
+        "expires": now + ttl,
+        "hits": 0,
+        "last_hit": None,
+        "bytes": 0,
+        "keep": 0,
+        "partial": 0,
+        "schema": SCHEMA,
+        "producer": None,
+    }
+    db.execute(
+        "INSERT OR REPLACE INTO entries({}) VALUES({})".format(
+            ",".join(_COLS), ",".join("?" * len(_COLS))
+        ),
+        [rowd[c] for c in _COLS],
+    )
+    db.commit()
+    bump(db, "negs")
+    return 0
+
+
+def cmd_release(args, cfg):
+    root = ns_root(args.ns)
+    ensure_dirs(root)
+    _, kh, _ = _full_key(args)
+    inflight_release(root, kh, int(getattr(args, "owner_pid", 0) or 0) or os.getppid())
+    return 0
+
+
+def cmd_cat(args, cfg):
+    root = ns_root(args.ns)
+    if cfg["off"] or _env("LGC_REFRESH"):
+        return 1
+    ensure_dirs(root)
+    norm, kh, _ = _full_key(args)
+    db, writable = open_db(root)
+    if not writable:
+        return 1
+    e = _rowdict(_row_by_kh(db, kh))
+    if not e or e["status"] != "pos":
+        return 1
+    if e["expires"] is not None and e["expires"] < time.time():
+        return 1
+    if e["value"] is not None:
+        v = e["value"]
+        sys.stdout.buffer.write(v if isinstance(v, bytes) else str(v).encode())
+        return 0
+    for f in _files(e):
+        if f["name"] == VALUE_FILE:
+            try:
+                with open(_blob_file(root, e, f), "rb") as fh:
+                    shutil.copyfileobj(fh, sys.stdout.buffer)
+                return 0
+            except OSError:
+                return 1
+    return 1
+
+
+def cmd_lane(args, cfg):
+    root = ns_root(args.ns)
+    if cfg["off"]:
+        cacheline("off")
+        return 0
+    ensure_dirs(root)
+    db, writable = open_db(root)
+    lane = args.lane
+    if not writable:
+        return 0  # degrade: lane usable/no-op
+    if args.lane_cmd == "probe":
+        if _env("LGC_REFRESH"):
+            return 0  # D29: skip lane reads
+        scope = _lane_scope(args)  # read-side: check whenever resolvable
+        if args.key:
+            inner = normalize_key(args.key)
+            lkhs = [keyhash(f"lane:{lane}:{inner}")]
+            if scope:
+                lkhs.append(keyhash(f"lane:{lane}:{inner}#{scope}"))
+            for lkh in lkhs:
+                e = _rowdict(_row_by_kh(db, lkh))
+                if (
+                    e
+                    and e["status"] == "neg"
+                    and (e["expires"] is None or e["expires"] > time.time())
+                ):
+                    age = int(time.time() - (e["created"] or 0))
+                    cacheline(f"neg:{e['reason'] or 'lane-fail'}({age}s)")
+                    bump(db, "lane_skips")
+                    return 1
+        for bl in [lane] + ([f"{lane}#{scope}"] if scope else []):
+            br = db.execute(
+                "SELECT fails,last_fail FROM breakers WHERE lane=?", (bl,)
+            ).fetchone()
+            if (
+                br
+                and br[0] >= BREAKER_FAILS
+                and time.time() - (br[1] or 0) < BREAKER_WINDOW
+            ):
+                cacheline(f"neg:breaker({int(time.time() - (br[1] or 0))}s)")
+                bump(db, "lane_skips")
+                return 1
+        return 0
+    if args.lane_cmd == "note":
+        if not writable or not args.key:
+            return 0
+        inner = normalize_key(args.key)
+        scope = _lane_write_scope(args)
+        lkey = f"lane:{lane}:{inner}" + (f"#{scope}" if scope else "")
+        reason = args.reason or "lane-fail"
+        ttl = (
+            args.ttl if args.ttl is not None else NEG_REASONS.get(reason, (HOUR, 1))[0]
+        )
+        now = time.time()
+        rowd = {
+            "key": lkey,
+            "kh": keyhash(lkey),
+            "kind": "lane",
+            "status": "neg",
+            "reason": reason,
+            "lane": lane,
+            "ver": 0,
+            "value": None,
+            "files": "[]",
+            "params": "{}",
+            "cred": scope,
+            "created": now,
+            "expires": now + ttl,
+            "hits": 0,
+            "last_hit": None,
+            "bytes": 0,
+            "keep": 0,
+            "partial": 0,
+            "schema": SCHEMA,
+            "producer": None,
+        }
+        db.execute(
+            "INSERT OR REPLACE INTO entries({}) VALUES({})".format(
+                ",".join(_COLS), ",".join("?" * len(_COLS))
+            ),
+            [rowd[c] for c in _COLS],
+        )
+        db.commit()
+        return 0
+    if args.lane_cmd == "hit":
+        if writable:
+            db.execute("DELETE FROM breakers WHERE lane=?", (lane,))
+            scope = _lane_scope(args)
+            if scope:
+                db.execute("DELETE FROM breakers WHERE lane=?", (f"{lane}#{scope}",))
+            db.commit()
+        return 0
+    if args.lane_cmd == "fail":
+        if writable:
+            scope = _lane_write_scope(args)
+            blane = f"{lane}#{scope}" if scope else lane
+            br = db.execute(
+                "SELECT fails,last_fail FROM breakers WHERE lane=?", (blane,)
+            ).fetchone()
+            now = time.time()
+            fails = (br[0] + 1) if br and now - (br[1] or 0) < BREAKER_WINDOW else 1
+            db.execute(
+                "INSERT OR REPLACE INTO breakers(lane,fails,last_fail) VALUES(?,?,?)",
+                (blane, fails, now),
+            )
+            db.commit()
+            bump(db, "lane_fails")
+        return 0
+    return 2
+
+
+def cmd_list(args, cfg):
+    root = ns_root(args.ns)
+    ensure_dirs(root)
+    db, _ = open_db(root)
+    glob = args.glob or "*"
+    now = time.time()
+    for k, exp in db.execute(
+        "SELECT key,expires FROM entries WHERE key IS NOT NULL"
+    ).fetchall():
+        if k.startswith("\x00"):
+            continue
+        if exp is not None and exp < now:
+            continue
+        if fnmatch.fnmatchcase(k, glob):
+            sys.stdout.write(k + "\n")
+    return 0
+
+
+def cmd_stats(args, cfg):
+    nss = [args.ns] if args.ns else sorted(NS_WHITELIST)
+    for ns in nss:
+        root = ns_root(ns)
+        if not os.path.isdir(root):
+            continue
+        ensure_dirs(root)
+        db, _ = open_db(root)
+        pos = db.execute("SELECT COUNT(*) FROM entries WHERE status='pos'").fetchone()[
+            0
+        ]
+        neg = db.execute("SELECT COUNT(*) FROM entries WHERE status='neg'").fetchone()[
+            0
+        ]
+        kb = db.execute(
+            "SELECT COALESCE(SUM(bytes),0) FROM entries WHERE keep=1"
+        ).fetchone()[0]
+        tb = _total_bytes(db)
+        cs = dict(db.execute("SELECT name,n FROM counters").fetchall())
+        cs.pop("norm_version", None)
+        counters_str = " ".join(f"{k}={v}" for k, v in sorted(cs.items()))
+        sys.stdout.write(
+            f"{ns}: pos={pos} neg={neg} bytes={tb} keep_bytes={kb} {counters_str}\n"
+        )
+    return 0
+
+
+def cmd_explain(args, cfg):
+    root = ns_root(args.ns)
+    ensure_dirs(root)
+    norm, kh, cred = _full_key(args)
+    db, _ = open_db(root)
+    out = {"raw": args.key, "norm": norm, "kh": kh, "cred": cred}
+    e = _rowdict(_row_by_kh(db, kh))
+    out["entry"] = e
+    if e:
+        e["value"] = f"<{len(e['value'])}B>" if e["value"] else None
+        ok, missing = _entry_files_ok(root, e)
+        out["files_ok"] = ok
+        out["missing"] = [f["relpath"] for f in missing]
+    d = inflight_dir(root, kh)
+    out["inflight"] = _read_owner(d) if os.path.isdir(d) else None
+    lanes = [
+        r[0]
+        for r in db.execute(
+            "SELECT key FROM entries WHERE key LIKE 'lane:%'"
+        ).fetchall()
+        if r[0].split("#", 1)[0].endswith(":" + norm.split("#", 1)[0])
+        # lane 键本身不进 cred 域，但 auth 类 lane-neg 带 '#<cred8>' 尾巴
+    ]
+    out["lane_negs"] = lanes
+    sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
+    return 0
+
+
+def cmd_key(args, cfg):
+    norm, kh, _ = _full_key(args)
+    sys.stdout.write(kh[:16] + "\n")
+    return 0
+
+
+def cmd_cred_fp(args, cfg):
+    """cred-fp <domain> → cred8 on stdout（engine 的 pack cred_domain 委托缝）。
+    domain 未知或当前无可读 cred 文件 → 空输出 + rc3（调用方按无凭据处理）。"""
+    dom = args.domain
+    if dom not in CRED_FILES:
+        sys.stderr.write(f"lgc: unknown cred domain {dom!r}\n")
+        return 3
+    fp = cred8_for(dom)
+    if fp == "anon":
+        return 3
+    sys.stdout.write(fp + "\n")
+    return 0
+
+
+def cmd_keep(args, cfg):
+    root = ns_root(args.ns)
+    ensure_dirs(root)
+    norm, kh, _ = _full_key(args)
+    db, writable = open_db(root)
+    if not writable:
+        return 1
+    e = _rowdict(_row_by_kh(db, kh))
+    if not e:
+        return 1
+    db.execute("UPDATE entries SET keep=1,expires=NULL,key=? WHERE kh=?", (norm, kh))
+    db.commit()
+    return 0
+
+
+def cmd_clear(args, cfg):
+    root = ns_root(args.ns)
+    ensure_dirs(root)
+    db, writable = open_db(root)
+    if not writable:
+        return 0
+    victims = []
+    if args.all:
+        victims = [_rowdict(r) for r in db.execute("SELECT * FROM entries").fetchall()]
+    elif args.cred:
+        victims = [
+            _rowdict(r)
+            for r in db.execute(
+                "SELECT * FROM entries WHERE cred=?", (args.cred,)
+            ).fetchall()
+        ]
+    elif args.prefix:
+        for r in db.execute("SELECT * FROM entries").fetchall():
+            d = _rowdict(r)
+            if d["key"] and d["key"].startswith(args.prefix):
+                victims.append(d)
+    elif args.key:
+        norm, kh, _ = _full_key(args)
+        e = _rowdict(_row_by_kh(db, kh))
+        if e:
+            victims.append(e)
+    for e in victims:
+        if not e:
+            continue
+        lk = KeyLock(root, e["kh"], tries=1)
+        if not lk.acquire():
+            continue
+        try:
+            _delete_entry(root, db, e)
+        finally:
+            lk.release()
+    return 0
+
+
+def _prune_ns(root, cfg, dead_cred, dry_run=False):
+    """→ list of dead-cred victim rows (empty unless dead_cred)."""
+    ensure_dirs(root)
+    db, writable = open_db(root)
+    if not writable:
+        return []
+    now = time.time()
+
+    def _locked_delete(e):
+        lk = KeyLock(root, e["kh"], tries=1)
+        if not lk.acquire():
+            return  # 并发物化/入库中 → 跳过，留给下轮
+        try:
+            _delete_entry(root, db, e)
+        finally:
+            lk.release()
+
+    # expired rows (keep=1 exempt)
+    for r in db.execute("SELECT * FROM entries WHERE keep=0").fetchall():
+        e = _rowdict(r)
+        if e["expires"] is not None and e["expires"] < now:
+            _locked_delete(e)
+            continue
+        if e["status"] == "pos" and e["files"] not in (None, "[]"):
+            ok, _m = _entry_files_ok(root, e)
+            if not ok:
+                _locked_delete(e)
+    # stale versions: v dirs not matching row.ver
+    bdir = os.path.join(root, "blobs")
+    live = {}
+    for r in db.execute("SELECT kh,ver,keep FROM entries").fetchall():
+        live[r[0]] = (r[1], r[2])
+    if os.path.isdir(bdir):
+        for hh in os.listdir(bdir):
+            hhd = os.path.join(bdir, hh)
+            if not os.path.isdir(hhd):
+                continue
+            for kh in os.listdir(hhd):
+                kdir = os.path.join(hhd, kh)
+                if not os.path.isdir(kdir):
+                    continue
+                cur = live.get(kh)
+                for v in os.listdir(kdir):
+                    vdir = os.path.join(kdir, v)
+                    if not (v.startswith("v") and v[1:].isdigit()):
+                        continue
+                    try:
+                        age = now - os.path.getmtime(vdir)
+                    except OSError:
+                        continue
+                    if cur and int(v[1:]) == (cur[0] or 0):
+                        continue  # current version
+                    if cur and cur[1]:
+                        continue  # keep=1 exempt from sweep
+                    if age < BLOB_GRACE:
+                        continue
+                    # orphan w/ manifest keep → leave; unparseable → quarantine
+                    mpath = os.path.join(vdir, "manifest.json")
+                    try:
+                        with open(mpath, encoding="utf-8") as f:
+                            m = json.load(f)
+                        if m.get("keep"):
+                            continue
+                    except Exception:
+                        quar = os.path.join(root, "quarantine")
+                        os.makedirs(quar, mode=0o700, exist_ok=True)
+                        try:
+                            os.rename(vdir, os.path.join(quar, f"{kh}-{v}-{int(now)}"))
+                        except OSError:
+                            pass
+                        continue
+                    shutil.rmtree(vdir, ignore_errors=True)
+    # tmp orphans
+    tdir = os.path.join(root, "tmp")
+    for t in os.listdir(tdir) if os.path.isdir(tdir) else []:
+        p = os.path.join(tdir, t)
+        try:
+            if now - os.path.getmtime(p) > TMP_ORPHAN_AGE:
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    os.remove(p)
+        except OSError:
+            pass
+    # inflight: only stale markers (≥6h or dead owner) — never <6h live
+    idir = os.path.join(root, "inflight")
+    for t in os.listdir(idir) if os.path.isdir(idir) else []:
+        p = os.path.join(idir, t)
+        try:
+            if now - os.path.getmtime(p) <= INFLIGHT_STALE:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(p, ignore_errors=True)
+    # --dead-cred: rows whose scope (cred column authoritative, '#<cred8>'
+    # key suffix as fallback) matches NO live fingerprint of any known cred
+    # domain — orphaned by fp-computation change or credential rotation.
+    # 'anon' counts as live while ≥1 domain still resolves to it.
+    victims = []
+    if dead_cred:
+        live = {cred8_for(d) for d in CRED_FILES}
+        for r in db.execute("SELECT * FROM entries").fetchall():
+            e = _rowdict(r)
+            scope = e["cred"]
+            if not scope:
+                k = e["key"] or ""
+                if not k.startswith("\x00"):
+                    i = k.rfind("#")
+                    if i > 0:
+                        scope = k[i + 1 :]
+            if not scope or scope in live:
+                continue
+            victims.append(e)
+            if not dry_run:
+                _locked_delete(e)
+    _evict_to_fit(root, db, cfg["max_size_mb"] * 1024 * 1024)
+    return victims
+
+
+def cmd_prune(args, cfg):
+    victims = []
+    if args.ns:
+        victims += _prune_ns(ns_root(args.ns), cfg, args.dead_cred, args.dry_run)
+    else:
+        for ns in sorted(NS_WHITELIST):
+            victims += _prune_ns(ns_root(ns), cfg, args.dead_cred, args.dry_run)
+    if args.dead_cred:
+        if args.dry_run:
+            for e in victims:
+                k = e["key"] or ""
+                if not k or k.startswith("\x00"):
+                    k = "kh:" + (e["kh"] or "?")
+                sys.stdout.write(k + "\n")
+        sys.stdout.write(f"dead-cred: {len(victims)}\n")
+    return 0
+
+
+# --- handshake faces: ZERO side effects (no ensure_dirs, no sqlite) ---------
+
+
+def cmd_has(args, cfg):
+    caps = list(CAPS_BASE)
+    for k in sorted(_ttl_table(cfg["jwt_ttl"])):
+        caps.append("kind:" + k)
+    for r in sorted(NEG_REASONS):
+        caps.append("reason:" + r)
+    if args.cap:
+        return 0 if args.cap in caps else 1
+    sys.stdout.write(VERSION + "\n")
+    for c in caps:
+        sys.stdout.write(c + "\n")
+    return 0
+
+
+def cmd_selftest(args, cfg):
+    base = cache_home()
+    try:
+        os.makedirs(base, exist_ok=True)
+        tmp = tempfile.mkdtemp(prefix="lgc-st-", dir=base)
+    except OSError:
+        try:
+            tmp = tempfile.mkdtemp(prefix="lgc-st-", dir=os.path.expanduser("~"))
+        except OSError as e:
+            sys.stdout.write(f"fail:mkdtemp {e}\n")
+            return 1
+    os.environ["LGC_HOME"] = tmp
+    step = "init"
+    try:
+        root = ns_root("link-get")
+        ensure_dirs(root)
+        step = "flock"
+        lk = KeyLock(root, "selftest", tries=1)
+        if not lk.acquire():
+            raise RuntimeError("flock unavailable")
+        lk.release()
+        step = "put-value"
+        a = argparse.Namespace(
+            ns="link-get",
+            key="article:selftest",
+            value="v1",
+            files=None,
+            from_dir=None,
+            lane="self",
+            ttl=None,
+            keep=False,
+            atomic=False,
+            cred=None,
+            producer="lgc@1",
+            params=None,
+            owner_pid=None,
+        )
+        if cmd_put(a, cfg) != 0:
+            raise RuntimeError("put rc!=0")
+        step = "cat"
+        argparse.Namespace(ns="link-get", key="article:selftest", cred=None)
+        db, _ = open_db(root)
+        norm, kh, _ = _full_key(a)
+        if not _row_by_kh(db, kh):
+            raise RuntimeError("row missing")
+        step = "put-file+get-into"
+        src = os.path.join(tmp, "f.md")
+        with open(src, "w") as f:
+            f.write("hello cache")
+        a2 = argparse.Namespace(
+            ns="link-get",
+            key="article:selftest2",
+            value=None,
+            files=[src],
+            from_dir=None,
+            lane="self",
+            ttl=None,
+            keep=False,
+            atomic=False,
+            cred=None,
+            producer=None,
+            params=None,
+            owner_pid=None,
+        )
+        if cmd_put(a2, cfg) != 0:
+            raise RuntimeError("put file rc!=0")
+        into = os.path.join(tmp, "out")
+        g = argparse.Namespace(
+            ns="link-get",
+            key="article:selftest2",
+            into=into,
+            claim=False,
+            wait=0,
+            json=False,
+            satisfies=None,
+            require_producer=None,
+            owner_pid=None,
+            cred=None,
+        )
+        if cmd_get(g, cfg) != 0:
+            raise RuntimeError("get rc!=0")
+        if not os.path.exists(os.path.join(into, "f.md")):
+            raise RuntimeError("materialize missing")
+        step = "neg"
+        n = argparse.Namespace(
+            ns="link-get",
+            key="article:del",
+            reason="deleted",
+            ttl=None,
+            owner_pid=None,
+            cred=None,
+        )
+        cmd_neg(n, cfg)
+        g2 = argparse.Namespace(
+            ns="link-get",
+            key="article:del",
+            into=None,
+            claim=False,
+            wait=0,
+            json=False,
+            satisfies=None,
+            require_producer=None,
+            owner_pid=None,
+            cred=None,
+        )
+        if cmd_get(g2, cfg) != 4:
+            raise RuntimeError("neg rc!=4")
+        step = "lane"
+        la = argparse.Namespace(
+            ns="link-get", lane_cmd="probe", lane="tardis", key="art:1"
+        )
+        if cmd_lane(la, cfg) != 0:
+            raise RuntimeError("lane probe blocked")
+        sys.stdout.write("selftest ok\n")
+        return 0
+    except Exception as e:
+        sys.stdout.write(f"fail:{step} {e}\n")
+        return 1
+    finally:
+        os.environ.pop("LGC_HOME", None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# argparse / main
+# --------------------------------------------------------------------------
+
+
+def _ns_ok(ns):
+    return bool(NS_RE.match(ns)) and ns in NS_WHITELIST
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="lgc", description="link-get unified cache layer")
+    p.add_argument("--version", action="store_true")
+    sub = p.add_subparsers(dest="cmd")
+
+    def base(name):
+        s = sub.add_parser(name)
+        s.add_argument("ns")
+        return s
+
+    g = base("get")
+    g.add_argument("key")
+    g.add_argument("--into")
+    g.add_argument("--claim", action="store_true")
+    g.add_argument("--wait", type=int, default=int(_env("LGC_WAIT") or 0))
+    g.add_argument("--json", action="store_true")
+    g.add_argument("--satisfies")
+    g.add_argument("--require-producer")
+    g.add_argument("--owner-pid")
+    g.add_argument("--cred")
+
+    s = base("put")
+    s.add_argument("key")
+    s.add_argument("--lane")
+    s.add_argument("--files", nargs="+")
+    s.add_argument("--value")
+    s.add_argument(
+        "--value-file", help="value 从文件读；'-'=stdin（保密载荷不进 argv）"
+    )
+    s.add_argument("--from", dest="from_dir")
+    s.add_argument("--ttl", type=int)
+    s.add_argument("--keep", action="store_true")
+    s.add_argument("--atomic", action="store_true")
+    s.add_argument("--cred")
+    s.add_argument("--producer")
+    s.add_argument("--params")
+    s.add_argument("--owner-pid")
+
+    n = base("neg")
+    n.add_argument("key")
+    n.add_argument("--reason", required=True)
+    n.add_argument("--ttl", type=int)
+    n.add_argument("--owner-pid")
+    n.add_argument("--cred")
+
+    r = base("release")
+    r.add_argument("key")
+    r.add_argument("--owner-pid")
+    r.add_argument("--cred")
+
+    c = base("cat")
+    c.add_argument("key")
+    c.add_argument("--cred")
+
+    lp = sub.add_parser("lane")
+    lp.add_argument("ns")
+    lp.add_argument("lane_cmd", choices=["probe", "note", "hit", "fail"])
+    lp.add_argument("lane")
+    lp.add_argument("key", nargs="?")
+    lp.add_argument("--reason")
+    lp.add_argument("--ttl", type=int)
+    lp.add_argument("--cred")
+
+    li = base("list")
+    li.add_argument("glob", nargs="?")
+
+    st = sub.add_parser("stats")
+    st.add_argument("--ns")
+
+    ex = base("explain")
+    ex.add_argument("key")
+    ex.add_argument("--cred")
+
+    k = base("key")
+    k.add_argument("key")
+    k.add_argument("--cred")
+
+    cf = sub.add_parser("cred-fp")
+    cf.add_argument("domain")
+
+    kp = base("keep")
+    kp.add_argument("key")
+    kp.add_argument("--cred")
+
+    cl = base("clear")
+    cl.add_argument("key", nargs="?")
+    cl.add_argument("--prefix")
+    cl.add_argument("--all", action="store_true")
+    cl.add_argument("--cred")
+
+    pr = sub.add_parser("prune")
+    pr.add_argument("--ns")
+    pr.add_argument("--dead-cred", action="store_true")
+    pr.add_argument("--dry-run", action="store_true")
+
+    h = sub.add_parser("has")
+    h.add_argument("cap", nargs="?")
+
+    sub.add_parser("selftest")
+    return p
+
+
+def main(argv):
+    cfg = load_config()
+    p = build_parser()
+    args = p.parse_args(argv)
+    if args.version or argv == ["--version"]:
+        sys.stdout.write(VERSION + "\n")
+        return 0
+    if not args.cmd:
+        p.print_usage(sys.stderr)
+        return 2
+    dispatch = {
+        "has": cmd_has,
+        "selftest": cmd_selftest,
+        "get": cmd_get,
+        "put": cmd_put,
+        "neg": cmd_neg,
+        "release": cmd_release,
+        "cat": cmd_cat,
+        "lane": cmd_lane,
+        "list": cmd_list,
+        "stats": cmd_stats,
+        "explain": cmd_explain,
+        "key": cmd_key,
+        "cred-fp": cmd_cred_fp,
+        "keep": cmd_keep,
+        "clear": cmd_clear,
+        "prune": cmd_prune,
+    }
+    try:
+        if args.cmd in ("has", "selftest"):
+            return dispatch[args.cmd](args, cfg)
+        ns = getattr(args, "ns", None)
+        if ns is not None and not _ns_ok(ns):
+            sys.stderr.write(
+                "lgc: unknown ns {!r} (whitelist: {})\n".format(
+                    ns, ",".join(sorted(NS_WHITELIST))
+                )
+            )
+            return 2
+        return dispatch[args.cmd](args, cfg)
+    except BrokenPipeError:
+        return 0
+    except sqlite3.Error as e:
+        cacheline(f"err({err_name(e)})")
+        return 1
+    except OSError as e:
+        cacheline(f"err({err_name(e)})")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

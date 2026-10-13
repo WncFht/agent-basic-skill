@@ -1,0 +1,16 @@
+{
+    "private": true,
+    "scripts": {
+        "format": "prettier --write \"**/*.md\" \"**/*.yaml\"",
+        "format:check": "prettier --check \"**/*.md\" \"**/*.yaml\"",
+        "lint:md": "markdownlint-cli2 \"**/*.md\""
+    },
+    "devDependencies": {
+        "git-format-staged": "4.0.2",
+        "markdownlint-cli2": "0.23.3",
+        "prettier": "3.9.9"
+    },
+    "overrides": {
+        "smol-toml": "1.8.0"
+    }
+}

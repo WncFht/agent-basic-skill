@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+extend-ignore = ["EXE001"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/enrich.py" = ["BLE001"]
+"scripts/resolve_ids.py" = ["BLE001"]
+"scripts/search_papers_by_dblp.py" = ["BLE001"]
+"scripts/search_papers_by_openreview.py" = ["BLE001", "SIM113"]
+"scripts/openreview_cache.py" = ["BLE001", "S112"]
+"scripts/source_worker.py" = ["BLE001"]
+"scripts/selftest_runtime.py" = ["RUF012", "SIM117"]

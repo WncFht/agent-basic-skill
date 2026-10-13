@@ -1,0 +1,115 @@
+# link-get 外部依赖 — setup.sh 幂等安装，install/upgrade 共用。
+# zhihu / canvas / arxiv-tex / tavily-hikari 等 skill 已并入本 skill：
+# 连接器全在 scripts/connectors/，setup.sh 全量软链进 ~/.local/bin；
+# 知乎重工具链（zhihu-cli / zhihu-scraper / MediaCrawler）归 scripts/setup-zhihu.sh。
+
+[[dep]]
+name = "link-get"
+check = "command -v link-get"
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "uv"
+check = "command -v uv && command -v uvx"   # trafilatura / transcript-api 车道、zhihu-tardis 解析、arxiv-tex、zhcli 兜底全走 uv run / uvx
+version = "uv --version"
+install = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+upgrade = "uv self update"
+
+[[dep]]
+name = "yt-dlp"
+check = "command -v yt-dlp"
+install = "uv tool install yt-dlp"
+upgrade = "uv tool upgrade yt-dlp"
+
+[[dep]]
+name = "defuddle"
+check = "npx -y defuddle --version"
+install = "true   # npx 按需拉取，无需预装"
+upgrade = "true"
+
+[[dep]]
+name = "BBDown"
+check = "command -v BBDown"
+optional = true   # B 站 AI 字幕兜底
+install = "bash ~/.agents/skills/link-get/scripts/install_bbdown.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/install_bbdown.sh"
+
+[[dep]]
+name = "zhihu-get"
+check = "command -v zhihu-get"
+optional = true   # 知乎车道委派对象（connectors/zhihu-get）
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "zhihu-tardis"
+check = "command -v zhihu-tardis"
+optional = true   # 知乎免登录镜像车道（connectors/zhihu-tardis）
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "canvas-get"
+check = "command -v canvas-get"
+optional = true   # SJTU Canvas 委派对象（connectors/canvas-get）
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "arxiv-tex"
+check = "command -v arxiv-tex"
+optional = true   # arxiv 车道（connectors/arxiv-tex → uvx arxiv-to-prompt）
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "zhihu-cli"
+check = "command -v zhihu"
+optional = true   # zhcli 车道主力；缺席时 uvx --from git+… zhihu 兜底
+install = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+
+[[dep]]
+name = "zhihu-scraper"
+check = "command -v zhihu-scraper"
+optional = true   # 专栏整栏归档 / ans+comments 车道才需要
+install = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+
+[[dep]]
+name = "MediaCrawler"
+check = "test -d ~/.local/share/zhihu-tools/MediaCrawler || command -v mediacrawler"
+optional = true   # --mc 大规模评论树/批量才需要
+install = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup-zhihu.sh"
+
+[[dep]]
+name = "tvly"
+check = "command -v tvly"
+optional = true   # wechat 车道中段（defuddle → tvly → firecrawl）；车道 exec 的是 tvly 本体
+install = "uv tool install tavily-cli"   # 包名是 tavily-cli（提供 tvly）；tvly-hikari 为用户自管 Hikari 包装不属本表
+upgrade = "uv tool upgrade tavily-cli"
+
+[[dep]]
+name = "canvas-token"
+check = "test -n \"$CANVAS_TOKEN\" || test -f ~/.config/canvas-skill/token"
+optional = true   # 仅 canvas pack 需要 PAT
+install = "echo 'Canvas → 设置 → 批准集成 → 新访问令牌；写入 ~/.config/canvas-skill/token 后 chmod 600'"
+
+[[dep]]
+name = "openssl"
+check = "command -v openssl"   # canvas-get 解 play-center 分享链接（AES-128-CBC → teclId）
+install = { linux = "sudo pacman -S --needed openssl", darwin = "brew install openssl" }
+
+[[dep]]
+name = "ffmpeg"
+check = "command -v ffmpeg"   # media-get 无字幕时抽 audio.wav；canvas-get 抽帧/音频
+install = { linux = "sudo pacman -S --needed ffmpeg", darwin = "brew install ffmpeg" }
+
+[[dep]]
+name = "lgc"
+check = "command -v lgc && lgc --version | grep -qE '^lgc '"
+version = "lgc --version"
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"

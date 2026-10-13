@@ -1,0 +1,170 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": {
+        "font": "serif",
+        "base": 7.6
+    },
+    "size": {
+        "slot": "half",
+        "height": 2.1
+    },
+    "colors": {
+        "registries": {
+            "arm": {
+                "frozen": "vblue",
+                "live": "vcoral"
+            }
+        }
+    },
+    "data": {
+        "d": [
+            {
+                "arm": "frozen",
+                "lam": 0.3,
+                "t": 0,
+                "kl": 0.42
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.3,
+                "t": 1,
+                "kl": 0.31
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.3,
+                "t": 2,
+                "kl": 0.27
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.3,
+                "t": 3,
+                "kl": 0.25
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.9,
+                "t": 0,
+                "kl": 0.42
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.9,
+                "t": 1,
+                "kl": 0.36
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.9,
+                "t": 2,
+                "kl": 0.34
+            },
+            {
+                "arm": "frozen",
+                "lam": 0.9,
+                "t": 3,
+                "kl": 0.33
+            },
+            {
+                "arm": "live",
+                "lam": 0.3,
+                "t": 0,
+                "kl": 0.42
+            },
+            {
+                "arm": "live",
+                "lam": 0.3,
+                "t": 1,
+                "kl": 0.28
+            },
+            {
+                "arm": "live",
+                "lam": 0.3,
+                "t": 2,
+                "kl": 0.22
+            },
+            {
+                "arm": "live",
+                "lam": 0.3,
+                "t": 3,
+                "kl": 0.2
+            },
+            {
+                "arm": "live",
+                "lam": 0.9,
+                "t": 0,
+                "kl": 0.42
+            },
+            {
+                "arm": "live",
+                "lam": 0.9,
+                "t": 1,
+                "kl": 0.33
+            },
+            {
+                "arm": "live",
+                "lam": 0.9,
+                "t": 2,
+                "kl": 0.29
+            },
+            {
+                "arm": "live",
+                "lam": 0.9,
+                "t": 3,
+                "kl": 0.26
+            }
+        ]
+    },
+    "meta": {
+        "ledger": "matrix 布局：rows=arm × cols=lam facet 展开 2x2 面板，facet field 自动注入 template 系列 where；strip margin 标 facet 值；color 按 {registry:arm,field:arm} 逐行取色",
+        "caption": "KL trajectory by anchor arm and $\\lambda$"
+    },
+    "layout": {
+        "kind": "matrix",
+        "rows": {
+            "field": "arm",
+            "ylabel": "$\\mathrm{KL}(p\\Vert T)$",
+            "labels": {
+                "frozen": "frozen",
+                "live": "live"
+            }
+        },
+        "cols": {
+            "field": "lam",
+            "xlabel": "step",
+            "labels": {
+                "0.3": "$\\lambda{=}0.3$",
+                "0.9": "$\\lambda{=}0.9$"
+            }
+        },
+        "template": {
+            "from": "d",
+            "grid": "y-only",
+            "xaxis": {
+                "lim": [-0.4, 3.4]
+            },
+            "yaxis": {
+                "lim": [0.15, 0.48]
+            },
+            "series": [
+                {
+                    "kind": "line",
+                    "x": "t",
+                    "y": "kl",
+                    "marker": "o",
+                    "ms": 2.6,
+                    "lw": 1.1,
+                    "color": {
+                        "registry": "arm",
+                        "field": "arm"
+                    }
+                }
+            ]
+        }
+    },
+    "output": {
+        "path": "spec_matrix.png"
+    }
+}

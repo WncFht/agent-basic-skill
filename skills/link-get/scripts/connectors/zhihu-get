@@ -1,0 +1,519 @@
+#!/bin/bash
+# zhihu-get —— 知乎内容统一入口，按 URL 类型自动路由到对应工具。
+#
+#   zhihu-get <url> [-o DIR] [--fast] [--comments] [--refresh|--no-cache|--cache-ttl SEC]
+#   zhihu-get <关键词>                 # 非知乎 URL 时按文章搜索
+#   zhihu-get --mc <search|detail|creator> <args...>   # 评论全树/批量 → MediaCrawler
+#
+# 路由（实测于 2026-09，匿名面 = 文章详情 API + tardis 镜像 + 热榜 + Jina 不稳定兜底；Firecrawl 烧 credit 殿后）：
+#   /p/<id>            文章   → zhihu-cli download article（实测可匿名）→ tardis → Jina → Firecrawl
+#   /question/q/answer/a 回答 → tardis（免登录最稳，覆盖镜像子集）→ zhihu-scraper → Jina → Firecrawl
+#   /question/q        问题   → zhihu-cli download question（要 z_c0）→ Jina 首答 → Firecrawl（--fast 只走 Jina 快览）
+#   /column/<slug> 或 zhuanlan.zhihu.com/<slug>  专栏 → zhihu-scraper fetch（整栏，要 z_c0）
+#   /people/<token>    用户   → zhihu-cli download user（要 z_c0）
+#   /zvideo/ /pin/            → zhihu-cli download video|pin（要 z_c0）
+# lgc-needs: get put neg lane delguard denylist breaker into wait from producer
+set -eo pipefail
+
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_s")" && pwd)"
+unset _s _d
+
+# --- lgc 缓存接线（D12）：有 _lgc.sh 就 source，缺席降级为全 miss stub，永不是死因 ---
+if [ -f "$SCRIPT_DIR/_lgc.sh" ]; then
+  . "$SCRIPT_DIR/_lgc.sh" || true
+fi
+if ! type z_probe >/dev/null 2>&1; then
+  _lgc_probe() { return 1; }
+  _lgc_has() { return 1; }
+  # shellcheck disable=SC2034 # ZHIT/ZRC/ZNEG/ZPATHS 是回传调用方的出参
+  z_probe() {
+    ZHIT=miss
+    ZRC=1
+    ZNEG=""
+    ZPATHS=""
+    return 0
+  }
+  z_store() {
+    ZDEL=0
+    return 0
+  }
+  z_note() { return 0; }
+  z_lane() { return 0; }
+  z_lfail() { return 0; }
+  # shellcheck disable=SC2034 # ZVAL/ZRC 是回传调用方的出参
+  z_val() {
+    ZVAL=""
+    ZRC=1
+    return 0
+  }
+  z_vput() { return 0; }
+  z_rel() { return 0; }
+  z_key() {
+    printf '%s' "${2:-}" | cksum | awk '{print $1}'
+    return 0
+  }
+  z_cat() { return 1; }
+  z_list() { return 0; }
+fi
+NS="zhihu-skill"
+
+# ---- 本文件私有补充（canonical 块外）：z_lnote 车道级 neg 不燃 breaker；z_lhit 车道成功复位 ----
+z_lnote() { # <ns> <lane> <key> [reason [ttl-sec]] — 只写 lane:<lane>:<key> neg
+  local ns="$1" lane="$2" k="$3" r="${4:-tardis-miss}" t="${5:-}"
+  [ -z "$k" ] && return 0
+  [ -n "${LGC_OFF:-}" ] && return 0
+  _lgc_probe || return 0
+  local args=(--reason "$r")
+  [ -n "$t" ] && args+=(--ttl "$t")
+  "$LGC_BIN" lane "$ns" note "$lane" "$k" "${args[@]}" >/dev/null 2>&1 || true
+  return 0
+}
+z_lhit() { # <ns> <lane> — 车道成功 → 复位 breaker（lgc put --lane 不复位）
+  local ns="$1" lane="$2"
+  [ -n "${LGC_OFF:-}" ] && return 0
+  _lgc_probe || return 0
+  "$LGC_BIN" lane "$ns" hit "$lane" >/dev/null 2>&1 || true
+  return 0
+}
+# ---- /lgc 接线 ----
+
+CONF="$HOME/.config/zhihu-skill"
+SETTINGS="$CONF/settings.toml"
+MC_DIR="$HOME/.local/share/zhihu-tools/MediaCrawler"
+PROXY="${https_proxy:-${HTTPS_PROXY:-http://127.0.0.1:7890}}"
+OUT=""
+FAST=0
+COMMENTS=0
+TARGET=""
+
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+
+# zhihu 命令不存在时走 uvx 免装兜底（git main，PyPI release 滞后）
+ZH="zhihu"
+command -v zhihu >/dev/null 2>&1 || ZH="uvx --from git+https://github.com/KrisTHL181/zhihu-cli zhihu"
+
+# --- 缓存键映射：content-id 优先；/question/q/answer/a 取 aid 不取 qid -------
+zkey() { # $1=URL → 基础键（无 +c/+f）；解不出 → rc1 无输出
+  local id
+  case "$1" in
+  */question/*/answer/* | */answer/*)
+    id="$(printf '%s' "$1" | grep -oE 'answer/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] && printf 'ans:%s\n' "$id" && return 0
+    ;;
+  */p/*)
+    id="$(printf '%s' "$1" | grep -oE '/p/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] && printf 'art:%s\n' "$id" && return 0
+    ;;
+  */question/*)
+    id="$(printf '%s' "$1" | grep -oE 'question/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] && printf 'q:%s\n' "$id" && return 0
+    ;;
+  */column/*)
+    id="$(printf '%s' "$1" | grep -oE 'column/[A-Za-z0-9_-]+' | cut -d/ -f2 | head -1)"
+    [ -n "$id" ] && printf 'col:%s\n' "$id" && return 0
+    ;;
+  *zhuanlan.zhihu.com/*)
+    id="$(printf '%s' "$1" | grep -oE 'zhuanlan\.zhihu\.com/[A-Za-z0-9_-]+' | cut -d/ -f2 | head -1)"
+    [ -n "$id" ] && [ "$id" != "p" ] && printf 'col:%s\n' "$id" && return 0
+    ;;
+  */people/*)
+    id="$(printf '%s' "$1" | grep -oE 'people/[A-Za-z0-9_-]+' | cut -d/ -f2 | head -1)"
+    [ -n "$id" ] && printf 'ppl:%s\n' "$id" && return 0
+    ;;
+  */zvideo/*)
+    id="$(printf '%s' "$1" | grep -oE 'zvideo/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] && printf 'zv:%s\n' "$id" && return 0
+    ;;
+  */pin/*)
+    id="$(printf '%s' "$1" | grep -oE 'pin/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+    [ -n "$id" ] && printf 'pin:%s\n' "$id" && return 0
+    ;;
+  esac
+  return 1
+}
+
+# 纯探测（不 --claim）：hit→材料化+已存行+exit0；neg→按 reason 回放出口码；miss/off→返回让车道跑
+probe_and_serve() { # $1=key
+  [ -z "$1" ] && return 0
+  z_probe "$NS" "$1" --into "$OUT" --wait "${LGC_WAIT:-300}"
+  case "$ZHIT" in
+  hit)
+    printf '%s\n' "$ZPATHS" | while IFS= read -r p; do
+      if [ -n "$p" ]; then echo "==> 已存 $p"; fi
+    done
+    exit 0
+    ;;
+  neg)
+    case "$ZNEG" in
+    deleted)
+      echo "内容已删除（缓存墓碑）" >&2
+      exit 4
+      ;;
+    notrack) exit 3 ;;
+    *) exit 5 ;;
+    esac
+    ;;
+  esac
+  return 0
+}
+
+# 本地依赖缺席的车道跳过且不记 lane-fail（D28）
+lane_dep() {
+  case "$1" in
+  tardis) [ -x "$SCRIPT_DIR/zhihu-tardis" ] ;;
+  scraper) command -v zhihu-scraper >/dev/null 2>&1 ;;
+  zhcli) command -v zhihu >/dev/null 2>&1 || command -v uvx >/dev/null 2>&1 ;;
+  firecrawl) [ -n "${FIRECRAWL_API_KEY:-}" ] ;;
+  jina) command -v curl >/dev/null 2>&1 ;;
+  *) return 1 ;;
+  esac
+}
+
+# GNU tr 按字节映射，删除集里只能放 ASCII 字符——全角标点放进来会切碎 CJK 字节
+slug() {
+  local s
+  s="$(printf '%s' "$1" | tr -d '/\\:*?"<>|' | tr ' ' '-' | tr -s '-')"
+  printf '%s' "${s:0:60}"
+}
+
+# 产物统一为 <标题slug>--<id>.md 并补 frontmatter；tmp 名以 . 开头避免被当成成品
+# id 提取优先 answer/<aid>（修取错 qid 的存量 bug）；产物路径写 FINAL_OUT 供入库
+finalize() {
+  local tmp="$1" lane="$2" title id out
+  title="$(sed -n 's/^Title: //p; s/^# //p' "$tmp" | head -1)"
+  id="$(printf '%s' "$TARGET" | grep -oE 'answer/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+  [ -n "$id" ] || id="$(printf '%s' "$TARGET" | grep -oE '[0-9]{5,}' | head -1)"
+  [ -n "$id" ] || id="$(date +%s)"
+  if [ -n "$title" ]; then
+    out="$OUT/$(slug "$title")--$id.md"
+  else
+    out="$OUT/$lane-$id.md"
+  fi
+  {
+    printf -- '---\nsource: %s\nvia: %s\n---\n\n' "$TARGET" "$lane"
+    cat "$tmp"
+  } >"$out"
+  rm -f "$tmp"
+  FINAL_OUT="$out"
+  echo "==> 已存 $out"
+}
+
+jina() { # 免 key 快读：flaky（~1/3 被上游拦），重试 3 次 + 按标题判 404；rc4=荒原墓碑
+  local url="$1" f got=0
+  local nc=()
+  [ -n "${LGC_REFRESH:-}" ] && nc=(-H "X-No-Cache: true")
+  f="$OUT/.jina-tmp.md"
+  for _ in 1 2 3; do
+    curl -sL --proxy "$PROXY" --max-time 60 "${nc[@]}" "https://r.jina.ai/$url" -o "$f" || true
+    if [ -f "$f" ] && grep -qE "知识荒原|没有知识存在的荒原" "$f"; then
+      echo "内容不存在或已删除（荒原页）" >&2
+      rm -f "$f"
+      return 4
+    fi
+    [ -s "$f" ] && grep -q "Title:" "$f" && {
+      got=1
+      break
+    }
+    sleep 3
+  done
+  [ -s "$f" ] || {
+    echo "Jina 3 次重试均失败" >&2
+    rm -f "$f"
+    return 5
+  }
+  head -40 "$f"
+  finalize "$f" jina
+  # 只有判据干净的产物才入库（残缺页交付不入缓存）；
+  # jina 产的是全文——入基键 $ZBASE 而非 +f 变体键，非 fast 探测也能命中
+  [ "$got" = 1 ] && {
+    z_store "$NS" "$ZBASE" --files "$FINAL_OUT" --lane jina --producer zhihu-get@1
+    [ "$ZDEL" = 1 ] && return 4
+  }
+  return 0
+}
+
+firecrawl() { # 云端渲染兜底：反爬最强但烧 credit，只在最后调用
+  local url="$1" f
+  [ -z "${FIRECRAWL_API_KEY:-}" ] && {
+    echo "无 FIRECRAWL_API_KEY，跳过 Firecrawl 兜底" >&2
+    return 5
+  }
+  f="$OUT/.firecrawl-tmp.md"
+  curl -s --proxy "$PROXY" --max-time 90 -X POST "https://api.firecrawl.dev/v1/scrape" \
+    -H "Authorization: Bearer $FIRECRAWL_API_KEY" -H "Content-Type: application/json" \
+    -d "{\"url\":\"$url\",\"formats\":[\"markdown\"],\"onlyMainContent\":true}" |
+    python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('markdown',''))" >"$f" || true
+  if [ -f "$f" ] && grep -qE "知识荒原|没有知识存在的荒原" "$f"; then
+    echo "内容不存在或已删除（荒原页）" >&2
+    rm -f "$f"
+    return 4
+  fi
+  if [ ! -s "$f" ] || ! grep -q '[[:alnum:]]' "$f"; then
+    echo "Firecrawl 抓取失败" >&2
+    rm -f "$f"
+    return 5
+  fi
+  finalize "$f" firecrawl
+  # 同 jina：全文产物入基键，+f 变体键只该收真正的缩水产物
+  z_store "$NS" "$ZBASE" --files "$FINAL_OUT" --lane firecrawl --producer zhihu-get@1
+  [ "$ZDEL" = 1 ] && return 4
+  return 0
+}
+
+# zhihu-cli/zhihu-scraper 车道统一收编法：$OUT/.lgc-stage-$$（同 fs）→ 成功后
+# z_store --from（保子目录 relpath）→ cp -a 交付 $OUT → 清 staging。
+# 实测 -o 布局：zhihu-cli article/pin/video=平铺 <title>_<author>_<created>.md
+#   （video 另带 <title>.mp4）；question=<title>_question.md + <title>_answers/NNNN_*.md；
+#   user=answers/ articles/ pins/ 三个子目录。zhihu-scraper=<title>/ 条目目录
+#   （<name>.md、assets/、columns 另有 内容/*.md，批量另有 归档进度.md——denylist 挡库外）。
+staged_run() { # $1=lane 名；$2..=工具命令（-o $ST 由本函数追加）
+  local lane="$1"
+  shift
+  local ST="$OUT/.lgc-stage-$$" rc=0
+  rm -rf "$ST"
+  mkdir -p "$ST"
+  "$@" -o "$ST" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    # 先交付 $OUT，再入库（lgc 永不在交付路径）；交付失败不入库——
+    # 缓存不该存用户没拿到的产物
+    if ! cp -a "$ST"/. "$OUT"/ 2>/dev/null; then
+      echo "staged_run: 交付拷贝失败（$ST → $OUT）" >&2
+      rm -rf "$ST"
+      return 5
+    fi
+    z_store "$NS" "$ZK" --from "$ST" --lane "$lane" --producer zhihu-get@1
+    if [ "$ZDEL" = 1 ]; then
+      rm -rf "$ST"
+      return 4
+    fi
+  fi
+  rm -rf "$ST"
+  return "$rc"
+}
+
+lane_run() { # 执行一条车道，rc 透传（0 成功 / 4 已删证据 / 其他失败）
+  case "$1" in
+  tardis)
+    "$SCRIPT_DIR/zhihu-tardis" "$TARGET" -o "$OUT"
+    ;;
+  jina) jina "$TARGET" ;;
+  firecrawl) firecrawl "$TARGET" ;;
+  scraper)
+    if [ "$COMMENTS" = 1 ]; then
+      staged_run scraper zhihu-scraper fetch "$TARGET" -s "$SETTINGS" --comments
+    else
+      staged_run scraper zhihu-scraper fetch "$TARGET" -s "$SETTINGS"
+    fi
+    ;;
+  zhcli) staged_run zhcli $ZH download "$ZHCLI_MODE" "$TARGET" ;;
+  *) return 2 ;;
+  esac
+}
+
+# 逐车道链（D11）：z_lane 门控 → rc 捕获 → 0 成 / 4 deleted 短路 / * 下一车道
+lanes_run() { # $1=内容键 $2..=lane 名单；rc: 0 成 / 5 全挂（rc4 内部 exit4 短路）
+  local k="$1" lane rc lk
+  shift
+  lk="${ZBASE:-$k}" # 车道级 neg 记内容基键（变体共享；车道键永不带 cred 域）
+  for lane in "$@"; do
+    z_lane "$NS" "$lane" "$lk" || continue
+    lane_dep "$lane" || continue
+    rc=0
+    lane_run "$lane" || rc=$?
+    case "$rc" in
+    0)
+      z_lhit "$NS" "$lane"
+      return 0
+      ;;
+    4)
+      z_note "$NS" "$k" deleted
+      [ "$k" != "$lk" ] && z_note "$NS" "$lk" deleted
+      exit 4
+      ;;
+    *)
+      [ "$lane" != tardis ] && z_lfail "$NS" "$lane" "$lk" lane-fail
+      ;;
+    esac
+  done
+  return 5
+}
+
+mc() { # 评论全树/批量：MediaCrawler，cookie.txt 在就直接注入登录态（不缓存）
+  local mode="$1" cookie_args=()
+  if [ -f "$CONF/cookie.txt" ]; then
+    # cookie 串走 MC_COOKIES env（base_config.py 补钉读 env 作 typer 默认）——
+    # --cookies argv 在 /proc/<pid>/cmdline 世界可读，登录态不能晾在命令行上
+    cookie_args=(--lt cookie)
+    MC_COOKIES="$(cat "$CONF/cookie.txt")"
+    export MC_COOKIES
+  else
+    echo "无 $CONF/cookie.txt，MediaCrawler 将走默认登录方式（先跑 auth-zhihu.sh 或 refresh-cookies）" >&2
+  fi
+  shift
+  case "$mode" in
+  detail) (cd "$MC_DIR" && uv run python main.py --platform zhihu --type detail --specified_id "$*" --get_comment true --get_sub_comment true "${cookie_args[@]}") ;;
+  search) (cd "$MC_DIR" && uv run python main.py --platform zhihu --type search --keywords "$*" --get_comment true --get_sub_comment true "${cookie_args[@]}") ;;
+  creator) (cd "$MC_DIR" && uv run python main.py --platform zhihu --type creator --creator_id "$*" --get_comment true --get_sub_comment true "${cookie_args[@]}") ;;
+  *)
+    echo "--mc 需要 search|detail|creator <args>" >&2
+    exit 2
+    ;;
+  esac
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -o | --output)
+    OUT="$2"
+    shift 2
+    ;;
+  --fast)
+    FAST=1
+    shift
+    ;;
+  --comments)
+    COMMENTS=1
+    shift
+    ;;
+  --refresh)
+    LGC_REFRESH=1
+    export LGC_REFRESH
+    shift
+    ;;
+  --no-cache)
+    LGC_OFF=1
+    export LGC_OFF
+    shift
+    ;;
+  --cache-ttl)
+    [ $# -ge 2 ] || {
+      echo "--cache-ttl 需要秒数参数" >&2
+      exit 2
+    }
+    LGC_TTL="$2"
+    export LGC_TTL
+    shift 2
+    ;;
+  --mc)
+    shift
+    mc "$@" || exit 5 # mc 运行失败归一 exit5（用法错在 mc 内部已 exit2）
+    exit 0
+    ;; # --mc 吃掉剩余全部参数
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    [ -z "$TARGET" ] && TARGET="$1"
+    shift
+    ;;
+  esac
+done
+[ -z "$TARGET" ] && {
+  usage
+  exit 2
+}
+[ -z "$OUT" ] && OUT="./zhihu-out"
+mkdir -p "$OUT"
+
+# 非知乎 URL → 当关键词搜索（不缓存）
+case "$TARGET" in
+*zhihu.com* | *zhuanlan*) ;;
+*)
+  $ZH search article "$TARGET" || exit 5
+  exit 0
+  ;;
+esac
+
+# 缓存键：ZBASE=内容基键；ZK=入库/探测键（后缀按分支产能定——+c 只有
+# scraper 车道能产，+f 只在 fast 车道集缩水的分支；其余分支永远基键）
+ZBASE="$(zkey "$TARGET" || true)"
+ZK="$ZBASE"
+
+case "$TARGET" in
+*/question/*/answer/* | */answer/*)
+  if [ "$COMMENTS" = 1 ]; then
+    # 仅 scraper 有评论产能（D10）：tardis/jina/firecrawl 不跑也不写 +c
+    [ -n "$ZBASE" ] && ZK="$ZBASE+c"
+    probe_and_serve "$ZK"
+    lanes_run "$ZK" scraper || {
+      echo "--comments 需要有效 z_c0；大规模评论树可试 zhihu-get --mc detail <url>" >&2
+      exit 5
+    }
+  elif [ "$FAST" = 1 ]; then
+    [ -n "$ZBASE" ] && ZK="$ZBASE+f"
+    probe_and_serve "$ZBASE" # 全量缓存可满足快览
+    probe_and_serve "$ZK"
+    lanes_run "$ZK" tardis jina || exit 5
+  else
+    probe_and_serve "$ZK"
+    lanes_run "$ZK" tardis scraper jina firecrawl || exit 5
+  fi
+  ;;
+*/p/*)
+  # --comments 在本分支无产能车道（与存量一致忽略）；--fast → +f
+  [ "$FAST" = 1 ] && [ -n "$ZBASE" ] && ZK="$ZBASE+f"
+  if [ "$FAST" = 1 ]; then
+    probe_and_serve "$ZBASE"
+    probe_and_serve "$ZK"
+    lanes_run "$ZK" tardis jina || exit 5
+  else
+    probe_and_serve "$ZK"
+    ZHCLI_MODE=article
+    lanes_run "$ZK" zhcli tardis jina firecrawl || exit 5
+  fi
+  ;;
+*/question/*)
+  # 本分支无评论产能车道（与存量一致忽略 --comments）；--fast → +f
+  [ "$FAST" = 1 ] && [ -n "$ZBASE" ] && ZK="$ZBASE+f"
+  if [ "$FAST" = 1 ]; then
+    probe_and_serve "$ZBASE"
+    probe_and_serve "$ZK"
+    lanes_run "$ZK" jina || exit 5
+  else
+    probe_and_serve "$ZBASE"
+    ZHCLI_MODE=question
+    lanes_run "$ZBASE" zhcli jina firecrawl || exit 5
+  fi
+  ;;
+*/column/* | *zhuanlan.zhihu.com/*)
+  # zhihu-scraper 不认 zhuanlan 专栏短链，归一化为 /column/<slug>
+  case "$TARGET" in
+  *zhuanlan.zhihu.com/*) TARGET="https://www.zhihu.com/column/${TARGET##*zhuanlan.zhihu.com/}" ;;
+  esac
+  ZBASE="$(zkey "$TARGET" || true)"
+  ZK="$ZBASE"
+  [ "$COMMENTS" = 1 ] && [ -n "$ZBASE" ] && ZK="$ZBASE+c"
+  probe_and_serve "$ZK"
+  lanes_run "$ZK" scraper || exit 5
+  ;;
+*/people/*)
+  probe_and_serve "$ZBASE"
+  ZHCLI_MODE=user
+  lanes_run "$ZBASE" zhcli || exit 5
+  ;;
+*/zvideo/*)
+  probe_and_serve "$ZBASE"
+  ZHCLI_MODE=video
+  lanes_run "$ZBASE" zhcli || exit 5
+  ;;
+*/pin/*)
+  probe_and_serve "$ZBASE"
+  ZHCLI_MODE=pin
+  lanes_run "$ZBASE" zhcli || exit 5
+  ;;
+*/collection/*)
+  echo "收藏夹用 JasonJarvan/Zhihu-Collections-MCP（公开免 cookie），见 skills/link-get/packs/zhihu/references/routing.md" >&2
+  exit 2
+  ;;
+*)
+  echo "不认得的知乎 URL：$TARGET（走 --fast 试试 Jina，或看 SKILL.md 路由表）" >&2
+  exit 2
+  ;;
+esac

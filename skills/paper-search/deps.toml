@@ -1,0 +1,13 @@
+# paper-search 依赖 — 全部脚本走 uv run（PEP723 内联依赖自动解析）
+
+[[dep]]
+name = "uv"
+check = "command -v uv"
+version = "uv --version"
+install = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+upgrade = "uv self update"
+
+[[dep]]
+name = "python3"
+check = "command -v python3"
+install = { linux = "sudo pacman -S --needed python", darwin = "brew install python@3.13" }

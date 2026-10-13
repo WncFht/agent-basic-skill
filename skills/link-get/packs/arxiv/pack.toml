@@ -1,0 +1,63 @@
+# arxiv pack — arxiv-tex connector 的原生 lane wrap（stdout 型工具：无 -o，
+# monolith shim dir-diff 收不到 → lanes/arxiv_tex.py 捕 stdout → artifact）。
+# 内容键 = arxivtex:{id}（lgc arxivtex kind，DAY ttl）——与 wrapper 版本戳键
+# arxiv:{id} 同 ns 共存不互毁（评审实锤：arxiv:tex:<id> 会被规范化器收敛回
+# arxiv:<id> 与同键 value entry 互删——arxivtex kind 专为拆此冲突加进 KINDS）。
+# 行为变更（spec §4.6）：arxiv.org URL 从 generic abs-md 改产 TeX 源。
+# 单车道 → fail_note=false（transient→lane×key neg→cooling→dep_absent 死锁实锤）。
+
+[pack]
+name = "arxiv"
+abi = 1
+ns = "link-get"
+kinds = ["arxivtex"]
+desc = "arXiv → TeX/LaTeX 源（arxiv-tex = uvx arxiv-to-prompt 的 lgc 版本戳 wrapper）"
+
+[match]
+hosts = ["arxiv.org", "*.arxiv.org", "export.arxiv.org"]
+schemes = ["http", "https"]
+
+# bare_resolve（canon 之前，首中即停；{0}=整组 {N}=捕获组）：
+# 裸 `math.AG/0601234` 不重写会被 canon dot-TLD 规则劫持成 https://math.AG/…
+# → generic 抓停车页返 rc0（线上实锤 bug）。旧式必须整条捕获——archive 前缀
+# +版本号缺一即 404（评审实锤：abs/{2} 丢 math.AG 和 vN）。
+[[match.bare]]
+pattern = '(?i)^arxiv:(.+)$'
+rewrite = 'https://arxiv.org/abs/{1}'
+[[match.bare]]
+pattern = '^([0-9]{4}\.[0-9]{4,5}(v[0-9]+)?)$'
+rewrite = 'https://arxiv.org/abs/{1}'
+[[match.bare]]
+pattern = '^([a-z-]+(\.[A-Z]{2})?/[0-9]{7}(v[0-9]+)?)$'
+rewrite = 'https://arxiv.org/abs/{1}'
+
+[identity]
+keyexpr = "arxivtex:{id}"
+# id 捕获同吃新式 NNNN.NNNNN(vN) 与旧式 archive.CL/NNNNNNN(vN)，整条进键；
+# capture_miss → {kind}:{url} per-URL 键兜底，lgc extract_id 仍再规范一次。
+capture = { id = '([a-z-]+(?:\.[A-Z]{2})?/[0-9]{7}(?:v[0-9]+)?|[0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)' }
+# satisfies 断言束（lgc get --satisfies → entry params 等值比较）：
+# full 束不供 abstract/sections/figures/list/tokens 请求，异修饰束互不供——
+# 互逐末写赢可接受（spec §4.4）。lane result.params 上报同键同型值供断言。
+satisfies = { mode = { param = "mode", default = "full", type = "str" }, section = { param = "section", default = "", type = "str" }, no_comments = { param = "no_comments", default = false, type = "bool" }, no_appendix = { param = "no_appendix", default = false, type = "bool" }, expand_macros = { param = "expand_macros", default = false, type = "bool" } }
+
+[params]
+mode = { type = "str", values = ["full", "abstract", "sections", "figures", "list", "tokens"], desc = "输出形：full(默认)|abstract|sections|figures|list|tokens——映射 --abstract/--section/--figure-paths/--list-sections/--token-count" }
+section = { type = "str", desc = "mode=sections 的节名（csv 多节 → 复数 --section）" }
+no_comments = { type = "bool", desc = "--no-comments：剥 LaTeX 注释" }
+no_appendix = { type = "bool", desc = "--no-appendix：剥附录及其后内容" }
+expand_macros = { type = "bool", desc = "--expand-macros：内联展开 \\newcommand 系宏" }
+# refresh/no_cache/cache_ttl 是 engine 保留 param——透传成 wrapper 同名旗标
+# （--refresh/--no-cache/--cache-ttl → LGC_REFRESH/LGC_OFF/LGC_TTL 戳层语义）。
+
+[[lanes]]
+name = "arxiv-tex"
+exec = "lanes/arxiv_tex.py"
+# uvx 是工具运行时硬依赖（wrapper exec uvx arxiv-to-prompt）；arxiv-tex 本体
+# 由 lane 三段解析（ARXIV_TEX>PATH>connectors/ 仓内相对）不进 tools 门。
+# LGC_OFF/LGC_REFRESH/LGC_TTL 喂 wrapper 的戳层（缺席=戳层照常工作）；
+# UV_* 供 uvx 冷启装包走镜像；ARXIV_TEX 是 connector 路径覆盖（测试桩同缝）。
+needs = { tools = ["uvx"], env = [], env_optional = ["ARXIV_TEX", "LGC_OFF", "LGC_REFRESH", "LGC_TTL", "LGC_WAIT", "UV_INDEX_URL", "UV_DEFAULT_INDEX", "UV_CACHE_DIR"] }
+egress = { hosts = ["arxiv.org", "*.arxiv.org", "export.arxiv.org", "pypi.org", "*.pypi.org", "files.pythonhosted.org"], proxy = "optional" }
+budget_ms = 300000        # e-print 下载+解包+uvx 冷启可能远超默认 120s
+fail_note = false         # 单车道必加：transient 上账→lane×key neg→冷却→dep_absent 死锁

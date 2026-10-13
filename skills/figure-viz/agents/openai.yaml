@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figure Viz"
+  short_description: "Auditable research figures: TikZ schematics + matplotlib data charts, one palette"
+  default_prompt: "Use $figure-viz to turn this formula, mechanism, concept, or data into a clean, auditable figure."

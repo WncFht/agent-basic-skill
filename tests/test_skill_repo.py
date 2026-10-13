@@ -57,6 +57,16 @@ EXPECTED_SKILLS = {
         "scripts/download_report.py", "scripts/search_and_download_report.py", "uv.lock",
     ],
 }
+ARCHIVED_SKILLS = {name: EXPECTED_SKILLS.pop(name) for name in ("plot-skill", "report-download")}
+EXPECTED_SKILLS.update({
+    "asr": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/setup.sh", "scripts/transcribe.py", "vendor/srt_postproc.py"],
+    "figure-viz": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/render.py", "assets/tikz/vizstyle.tex", "assets/mpl/fvstyle.py"],
+    "link-get": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/link-get", "scripts/fetch-engine", "scripts/setup.sh", "packs/canvas/pack.toml"],
+    "paper-search": ["SKILL.md", "agents/openai.yaml", "deps.toml", "pyproject.toml", "uv.lock", ".env.example", "scripts/search_papers.py", "data/openreview_venues.json"],
+    "video-render-pdf": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/setup.sh", "scripts/frames.py", "scripts/compile.sh", "assets/notes-template.tex"],
+    "setup-toolchain": ["SKILL.md", "agents/openai.yaml", "deps.toml", "assets/.pre-commit-config.yaml", "assets/.crossnote/parser.js"],
+    "skill-management": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/skill_doctor.sh", "scripts/skill_deps.py"],
+})
 WRAPPER_SKILLS = set()
 DISALLOWED_WRAPPER_NAMES = {
     "tests",
@@ -70,6 +80,17 @@ DISALLOWED_WRAPPER_NAMES = {
 
 
 class SkillRepoTests(unittest.TestCase):
+    def test_archived_skills_preserve_companion_files(self) -> None:
+        for skill_name, required_files in ARCHIVED_SKILLS.items():
+            self.assertFalse((SKILLS_ROOT / skill_name).exists())
+            for relative_path in required_files:
+                self.assertTrue((REPO_ROOT / "vendor" / skill_name / relative_path).exists())
+
+    def test_release_excludes_runtime_state_and_credentials(self) -> None:
+        forbidden_names = {".env", ".venv", ".venv-qwen", "models", "openreview_cache", "paper-search-logs", "bandscan"}
+        for path in SKILLS_ROOT.rglob("*"):
+            self.assertNotIn(path.name, forbidden_names, msg=str(path))
+
     def test_agent_install_doc_exists(self) -> None:
         self.assertTrue(AGENT_INSTALL_DOC.exists(), msg="missing .codex/INSTALL.md")
         content = AGENT_INSTALL_DOC.read_text(encoding="utf-8")

@@ -1,0 +1,79 @@
+# video-render-pdf 外部依赖 — skill-management/scripts/skill_deps.py 消费。
+# install/upgrade 只覆盖可独立升级的项；pacman/brew 管的系统包随系统升级走，不声明 upgrade。
+
+[[dep]]
+name = "link-get --media"           # 素材获取入口（media-get 连接器随 link-get 上架）
+check = "command -v link-get && command -v media-get"
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+[[dep]]
+name = "link-get <canvas-url>"      # Canvas 实录入口（canvas-get 连接器随 link-get 上架）
+check = "command -v link-get && command -v canvas-get"
+optional = true   # 仅 SJTU Canvas 实录需要（link-get 连接器，随其 setup.sh 软链）
+install = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/link-get/scripts/setup.sh"
+
+# yt-dlp / BBDown / deno|node(JS runtime) 是 link-get 车道内件——由上方 link-get dep 保底，不重复声明。
+
+[[dep]]
+name = "figure-viz"                 # 重绘轨（TikZ/mpl + 审计）：同仓 skill，缺失仅降级不阻塞
+check = "test -x ~/.agents/skills/figure-viz/scripts/render.py"
+optional = true
+
+[[dep]]
+name = "uv"
+check = "command -v uvx"
+version = "uv --version"
+install = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+upgrade = "uv self update"
+
+[[dep]]
+name = "ffmpeg"
+check = "command -v ffmpeg"
+install = { linux = "sudo pacman -S --needed ffmpeg", darwin = "brew install ffmpeg" }
+
+[[dep]]
+name = "xelatex"
+check = { linux = "command -v xelatex", darwin = "command -v xelatex || test -x /Library/TeX/texbin/xelatex" }
+install = { linux = "sudo pacman -S --needed texlive-xetex texlive-langchinese", darwin = "brew install --cask basictex" }   # basictex 已含 xelatex，勿用 mactex-no-gui（与 basictex 冲突）
+
+[[dep]]
+name = "pdftoppm"
+check = "command -v pdftoppm"
+install = { linux = "sudo pacman -S --needed poppler", darwin = "brew install poppler" }
+
+[[dep]]
+name = "magick"
+check = "command -v magick"
+optional = true
+install = { linux = "sudo pacman -S --needed imagemagick", darwin = "brew install imagemagick" }
+
+[[dep]]
+name = "ghostscript"
+check = "command -v gs"
+optional = true
+install = { linux = "sudo pacman -S --needed ghostscript", darwin = "brew install ghostscript" }
+
+[[dep]]
+name = "tectonic"
+check = "command -v tectonic"
+optional = true
+install = { linux = "sudo pacman -S --needed tectonic", darwin = "brew install tectonic" }
+
+[[dep]]
+name = "fandol"
+check = { linux = "kpsewhich FandolSong-Regular.otf", darwin = "PATH=/Library/TeX/texbin:$PATH kpsewhich FandolSong-Regular.otf" }
+optional = true
+install = { linux = "sudo pacman -S --needed texlive-langchinese", darwin = "sudo /Library/TeX/texbin/tlmgr install ctex fandol" }
+
+[[dep]]
+name = "asr-venv"
+check = "test -x ~/.agents/skills/asr/.venv/bin/python"
+install = "bash ~/.agents/skills/asr/scripts/setup.sh"
+upgrade = "bash ~/.agents/skills/asr/scripts/setup.sh"
+
+[[dep]]
+name = "asr-models"
+check = "test -d ~/.agents/skills/asr/models/silero-vad-v5"
+install = "bash ~/.agents/skills/asr/scripts/setup.sh"

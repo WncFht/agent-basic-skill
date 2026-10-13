@@ -1,0 +1,250 @@
+#!/bin/bash
+# zhihu-tardis —— 免登录读知乎单篇：把 URL 改写到知乎官方 SEO 镜像 tardis，抓 SSR HTML 转 Markdown。
+#
+#   zhihu-tardis <url> [-o DIR] [--refresh|--no-cache|--cache-ttl SEC]
+#
+# 覆盖：/p/<id> 文章 → tardis/zm/art/<id>；/answer/<id> 与 /question/<q>/answer/<a> → tardis/zm/ans/<id>
+# 只覆盖已被镜像的子集：未镜像的 ID 一律 302→/tardis/error，本脚本以退出码 3 上抛让调用方降级。
+# lgc-needs: get put neg lane delguard denylist breaker into wait
+set -eo pipefail
+
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_s")" && pwd)"
+unset _s _d
+
+# ---- lgc 接线：source 同目录 _lgc.sh（canonical 唯一实体，与本脚本同目录）；
+#      缺席降级为全 miss stub，永不是死因（与 zhihu-get 同政策） ----
+if [ -f "$SCRIPT_DIR/_lgc.sh" ]; then
+  . "$SCRIPT_DIR/_lgc.sh" || true
+fi
+# 部分 source（截断写/冲突标/坏盘）会留下半截函数集——单查 z_probe 会让
+# 未定义函数 rc127。全集任缺 → 先清掉残余定义再装整组 stub。
+if ! type z_probe z_store z_note z_lane z_lfail z_val z_vput z_rel z_key \
+  z_cat z_list _lgc_probe _lgc_has >/dev/null 2>&1; then
+  unset -f z_probe z_store z_note z_lane z_lfail z_val z_vput z_rel z_key \
+    z_cat z_list _lgc_probe _lgc_has 2>/dev/null || true
+  _lgc_probe() { return 1; }
+  _lgc_has() { return 1; }
+  # shellcheck disable=SC2034 # ZHIT/ZRC/ZNEG/ZPATHS 是回传调用方的出参
+  z_probe() {
+    ZHIT=miss
+    ZRC=1
+    ZNEG=""
+    ZPATHS=""
+    return 0
+  }
+  z_store() {
+    ZDEL=0
+    return 0
+  }
+  z_note() { return 0; }
+  z_lane() { return 0; }
+  z_lfail() { return 0; }
+  # shellcheck disable=SC2034 # ZVAL/ZRC 是回传调用方的出参
+  z_val() {
+    ZVAL=""
+    ZRC=1
+    return 0
+  }
+  z_vput() { return 0; }
+  z_rel() { return 0; }
+  z_key() {
+    printf '%s' "${2:-}" | cksum | awk '{print $1}'
+    return 0
+  }
+  z_cat() { return 1; }
+  z_list() { return 0; }
+fi
+
+# ---- 本文件私有补充（canonical 块外）：z_lnote 车道级 neg 不燃 breaker；z_lhit 车道成功复位 ----
+z_lnote() { # <ns> <lane> <key> [reason [ttl-sec]] — 只写 lane:<lane>:<key> neg
+  local ns="$1" lane="$2" k="$3" r="${4:-tardis-miss}" t="${5:-}"
+  [ -z "$k" ] && return 0
+  [ -n "${LGC_OFF:-}" ] && return 0
+  _lgc_probe || return 0
+  local args=(--reason "$r")
+  [ -n "$t" ] && args+=(--ttl "$t")
+  "$LGC_BIN" lane "$ns" note "$lane" "$k" "${args[@]}" >/dev/null 2>&1 || true
+  return 0
+}
+z_lhit() { # <ns> <lane> — 车道成功 → 复位 breaker（lgc put --lane 不复位）
+  local ns="$1" lane="$2"
+  [ -n "${LGC_OFF:-}" ] && return 0
+  _lgc_probe || return 0
+  "$LGC_BIN" lane "$ns" hit "$lane" >/dev/null 2>&1 || true
+  return 0
+}
+# ---- /lgc 接线 ----
+
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36"
+OUT="."
+URL=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -o | --output)
+    OUT="$2"
+    shift 2
+    ;;
+  --refresh)
+    LGC_REFRESH=1
+    export LGC_REFRESH
+    shift
+    ;;
+  --no-cache)
+    LGC_OFF=1
+    export LGC_OFF
+    shift
+    ;;
+  --cache-ttl)
+    [ $# -ge 2 ] || {
+      echo "--cache-ttl 需要秒数参数" >&2
+      exit 2
+    }
+    LGC_TTL="$2"
+    export LGC_TTL
+    shift 2
+    ;;
+  *)
+    [ -z "$URL" ] && URL="$1"
+    shift
+    ;;
+  esac
+done
+[ -z "$URL" ] && {
+  echo "用法: zhihu-tardis <url> [-o DIR] [--refresh|--no-cache|--cache-ttl SEC]" >&2
+  exit 2
+}
+mkdir -p "$OUT"
+
+case "$URL" in
+*/p/*)
+  ID=$(printf '%s' "$URL" | grep -oE '/p/[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+  KIND=art
+  ;;
+*/answer/*)
+  ID=$(printf '%s' "$URL" | grep -oE 'answer/[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+  KIND=ans
+  ;;
+*)
+  echo "tardis 只覆盖单篇文章(/p/)与单条回答(/answer/)：$URL" >&2
+  exit 2
+  ;;
+esac
+[ -z "$ID" ] && {
+  echo "URL 里解不出 id：$URL" >&2
+  exit 2
+}
+
+# 内容键探测先行（纯探测不 claim）：hit→材料化交付；neg→按 reason 回放出口码。
+# 车道门只把守网络抓取——缓存命中不该被 breaker 冷却误伤
+z_probe zhihu-skill "$KIND:$ID" --into "$OUT" --wait "${LGC_WAIT:-300}"
+case "$ZHIT" in
+hit)
+  printf '%s\n' "$ZPATHS" | while IFS= read -r p; do
+    if [ -n "$p" ]; then echo "==> 已存 $p"; fi
+  done
+  exit 0
+  ;;
+neg)
+  case "$ZNEG" in
+  deleted)
+    echo "内容已删除（缓存墓碑）" >&2
+    exit 4
+    ;;
+  notrack) exit 3 ;;
+  *) exit 5 ;;
+  esac
+  ;;
+esac
+
+# 车道级负缓存门：确定性未镜像（tardis-miss 30d）或 lane-fail/breaker 命中 → 直接降级
+z_lane zhihu-skill tardis "$KIND:$ID" || {
+  echo "tardis 车道被缓存跳过（lane-neg/breaker）" >&2
+  exit 3
+}
+# dep-absent 不记 lane-fail（D28）：uv 缺席时解析车道必然失败，先退
+command -v uv >/dev/null 2>&1 || {
+  echo "uv 缺席（tardis 解析依赖 trafilatura），跳过本车道" >&2
+  exit 5
+}
+
+# 直接请求不走代理；知乎按 IP 信誉给面，数据中心代理反而更糟
+code=$(curl -s --noproxy '*' -A "$UA" --max-time 20 -o "$OUT/.tardis-$KIND-$ID.html" -w "%{http_code}" "https://www.zhihu.com/tardis/zm/$KIND/$ID" || true)
+if [ "$code" != "200" ]; then
+  rm -f "$OUT/.tardis-$KIND-$ID.html"
+  case "$code" in
+  302 | 404)
+    # 确定性未镜像：车道级 neg 30d，不燃 breaker（车道健康，是内容缺席）
+    z_lnote zhihu-skill tardis "$KIND:$ID" tardis-miss
+    echo "tardis 未镜像该内容（HTTP $code，预期 302→error）" >&2
+    exit 3
+    ;;
+  *)
+    # 403/412/429/5xx/000 等瞬时车道故障：lane-fail 15min + breaker，exit5
+    z_lfail zhihu-skill tardis "$KIND:$ID" lane-fail 900
+    echo "tardis 车道瞬时故障（HTTP $code）" >&2
+    exit 5
+    ;;
+  esac
+fi
+if ! grep -q "RichText" "$OUT/.tardis-$KIND-$ID.html"; then
+  # 200 但无正文 = 验证页/风控页：lane-fail 1h + breaker，exit5
+  z_lfail zhihu-skill tardis "$KIND:$ID" lane-fail 3600
+  echo "tardis 返回页无正文（可能是验证页）" >&2
+  exit 5
+fi
+
+MD_TMP="$OUT/.tardis-$KIND-$ID.md"
+TITLE="$(
+  uv run --quiet --with trafilatura python3 - "$OUT/.tardis-$KIND-$ID.html" "$MD_TMP" "$URL" <<'PY'
+import sys, re, trafilatura
+
+html = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+md = trafilatura.extract(html, output_format="markdown", include_images=True, include_links=True) or ""
+title = (re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"', html)
+         or re.search(r"<title[^>]*>([^<]+)</title>", html))
+title = title.group(1).strip() if title else ""
+author = re.search(r'<meta[^>]+name="author"[^>]+content="([^"]+)"', html)
+author = author.group(1).strip() if author else ""
+header = f"# {title}\n\n> 作者: {author} · 来源: tardis 镜像（免登录 SEO 面）\n\n" if title else ""
+if not md.strip():
+    print("tardis 页面解析为空", file=sys.stderr)
+    sys.exit(1)
+fm = f"---\nsource: {sys.argv[3]}\nvia: tardis\n---\n\n"
+open(sys.argv[2], "w").write(fm + header + md)
+print(title)
+PY
+)" || {
+  # 解析失败 = 车道运行时故障：lane-fail 1h，出口码归一 5
+  z_lfail zhihu-skill tardis "$KIND:$ID" lane-fail 3600
+  rm -f "$OUT/.tardis-$KIND-$ID.html" "$MD_TMP"
+  echo "tardis 页面解析失败" >&2
+  exit 5
+}
+
+rm -f "$OUT/.tardis-$KIND-$ID.html"
+SLUG="$(printf '%s' "$TITLE" | tr -d '/\\:*?"<>|' | tr ' ' '-' | tr -s '-')"
+SLUG="${SLUG:0:60}"
+[ -z "$SLUG" ] && SLUG="tardis-$KIND"
+MD="$OUT/$SLUG--$ID.md"
+mv "$MD_TMP" "$MD" || {
+  # 交付改名失败 = 车道运行时故障（set -e 下裸 mv 会以 rc1 猝死且无记账）
+  z_lfail zhihu-skill tardis "$KIND:$ID" lane-fail 3600
+  echo "tardis 交付改名失败：$MD_TMP → $MD" >&2
+  exit 5
+}
+echo "==> 已存 $MD"
+# 产物已交付再入库：delguard 拒收（ZDEL）= 墓碑内容 → deleted neg + exit4
+z_store zhihu-skill "$KIND:$ID" --files "$MD" --lane tardis --producer zhihu-tardis@1
+if [ "$ZDEL" = 1 ]; then
+  z_note zhihu-skill "$KIND:$ID" deleted
+  echo "内容命中删除签名（tombstone）" >&2
+  exit 4
+fi
+z_lhit zhihu-skill tardis

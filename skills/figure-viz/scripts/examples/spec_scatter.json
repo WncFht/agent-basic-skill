@@ -1,0 +1,57 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": { "font": "serif", "base": 7.6 },
+    "size": { "slot": "half", "height": 1.9 },
+    "colors": {
+        "registries": {
+            "root": { "true": "vgreen", "false": "vcoral" }
+        }
+    },
+    "data": {
+        "scan": [
+            { "cmax": 0.11, "m0": 0.94, "root": true },
+            { "cmax": 0.18, "m0": 1.02, "root": true },
+            { "cmax": 0.26, "m0": 1.08, "root": true },
+            { "cmax": 0.33, "m0": 1.05, "root": true },
+            { "cmax": 0.41, "m0": 0.97, "root": false },
+            { "cmax": 0.48, "m0": 0.93, "root": false },
+            { "cmax": 0.55, "m0": 0.99, "root": false },
+            { "cmax": 0.63, "m0": 0.91, "root": false }
+        ]
+    },
+    "meta": {
+        "ledger": "scatter: 每点 = 一次 (cmax, m0) 扫描，按 root 分色分 marker；ref:m0=1 边界 + note 标注",
+        "caption": "existence boundary of the fixed point"
+    },
+    "title": "existence boundary",
+    "xaxis": { "label": "$c_{\\max}$" },
+    "yaxis": { "label": "$M_0(\\tau_{\\min})$" },
+    "grid": "y-only",
+    "series": [
+        {
+            "kind": "scatter",
+            "from": "scan",
+            "by": "root",
+            "x": "cmax",
+            "y": "m0",
+            "color": "root",
+            "marker": { "true": "o", "false": "x" },
+            "s": 14,
+            "alpha": 0.9,
+            "label": {
+                "true": "$W_0$ root exists ({n})",
+                "false": "no fixed point ({n})"
+            }
+        },
+        { "kind": "ref", "dir": "h", "at": 1, "color": "vink", "ls": "--" },
+        {
+            "kind": "note",
+            "at": [0.03, 1],
+            "units": ["axes", "data"],
+            "text": "$M_0 = 1$",
+            "props": { "va": "bottom", "fontsize": 6.2 }
+        }
+    ],
+    "legend": { "loc": "upper right", "fontsize": 6.0 }
+}

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Setup Toolchain"
+  short_description: "Scaffold format/lint/pre-commit/CI toolchain and agent entrypoints for a repo"

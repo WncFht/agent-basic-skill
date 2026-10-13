@@ -10,5 +10,18 @@ openspec/
 temp/
 .ace-tool/
 
+# Skill runtime state and credentials (keep templates and bundled assets).
+.env
+.env.*
+!.env.example
+.venv*/
+.ruff_cache/
+.mypy_cache/
+/skills/asr/models/
+/skills/asr/bin/
+/skills/paper-search/data/openreview_cache/
+/skills/paper-search/paper-search-logs/
+/skills/video-render-pdf/scripts/bandscan/
+
 # MPE preview env (local link farm — scripts/crossnote-links.sh)
 /.crossnote/

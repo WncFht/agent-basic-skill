@@ -1,0 +1,1359 @@
+#!/usr/bin/env python3
+"""SJTU Canvas 课堂实录 + 课程资源：PAT -> REST/LTI -> 下载。
+
+实录用法：
+  canvas-get "https://oc.sjtu.edu.cn/courses/97882"               # 列讲次
+  canvas-get ".../courses/97882" --lecture 2 -o DIR              # 下第 2 讲
+  canvas-get ".../courses/97882" --lecture 2 --camera all        # 全部机位
+  canvas-get "https://v.sjtu.edu.cn/.../#/play-center?xxxx" --lecture 2 -o DIR
+                                                                 # 分享链接同上
+
+轻量资源用法（不走 LTI、不下视频，回答"有没有作业/课件"这类问题）：
+  canvas-get --list-courses                                     # 我在选的课
+  canvas-get 97882 --files                                      # 列课程文件
+  canvas-get 97882 --files --download DIR                       # 下载全部文件
+  canvas-get 97882 --announcements                              # 公告
+  canvas-get 97882 --assignments                                # 作业 + 截止
+
+认证：Canvas PAT（--token / $CANVAS_TOKEN / ~/.config/canvas-skill/token）。
+PAT 同时覆盖 REST API 与实录 LTI——sessionless_launch 接口换真 session，
+不需要浏览器 cookie（链路细节见 skills/link-get/references/canvas-lti.md）。
+
+产物 (写入 -o/--out，默认当前目录)：
+  meta.json          课程/讲次元数据（不含签名 URL）
+  video.mp4          默认选 screen 机位（PPT 录屏，做笔记插图最佳），无则第一机位
+  camera<N>.mp4      --camera all 或 --camera N 时按机位命名
+  cover.jpg          默认取视频 120s 处帧，--cover-at 可改（实录平台无封面图；
+                     课前常为签到/待机画面，建议取第一页标题 slide 时段）
+  audio.wav          平台 AI 字幕常未就绪，统一走 ASR 转写
+
+缓存（lgc，~/.cache/canvas-skill/；缺席自动降级为裸行为）：
+  lec:<cour_id> 整讲产物束 keep=1 归档；jwt 20min / tecl 180d / donor 7d /
+  lec-list 15min（仅列表展示，--lecture/--all 恒实时）/ api 白名单 ≤30min /
+  src 10min。--refresh 跳缓存读仍写回；--no-cache 全绕；--cache-ttl SEC。
+
+注意：play-center 分享链接的 query 参数是前端硬编码 key（jy-resource-qry1 /
+jy-query-iv-0001）的 AES-128-CBC 密文，本脚本本地解出 teclId 后借任一在选
+课程的 LTI token 列讲次/下载；--files/--announcements/--assignments 等轻量
+子命令仍需 oc 课程页 URL 或课程 ID。
+"""
+
+import argparse
+import base64
+import hashlib
+import html
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+from http import cookiejar
+from http.client import HTTPException  # 模块内函数 http() 遮蔽了 http 包名，须具名导入
+from pathlib import Path
+
+# lgc-needs: get put cat list clear release value into wait satisfies claim cred ttl atomic keep-flag producer params owner-pid json
+
+# LGC-PROBE-BLOCK v1 (python)
+LGC_BIN = os.environ.get("LGC_BIN", "lgc")  # 改它必须清 LGC_CAPS
+
+
+def _lgc_probe():  # 惰性每进程一次；LGC_CAPS 经 os.environ 缓存/继承
+    if os.environ.get("LGC_OFF"):
+        os.environ["LGC_CAPS"] = ""
+        return False
+    if "LGC_CAPS" not in os.environ:
+        caps = ""
+        p = shutil.which(LGC_BIN)
+        if p:
+            try:
+                r = subprocess.run(
+                    [p, "has"], capture_output=True, text=True, timeout=5
+                )
+                lines = (r.stdout or "").splitlines()
+                if (
+                    r.returncode == 0
+                    and lines
+                    and re.match(r"^lgc [0-9]+(\.[0-9]+)?$", lines[0])
+                ):
+                    caps = " ".join(lines[1:])
+            except Exception:
+                caps = ""
+        os.environ["LGC_CAPS"] = caps  # ""=已探缺席；key 缺席=未探
+    return bool(os.environ["LGC_CAPS"])
+
+
+def _lgc_has(cap):
+    return f" {cap} " in " {} ".format(os.environ.get("LGC_CAPS", ""))
+
+
+# /LGC-PROBE-BLOCK
+
+# CANVAS_OC_BASE：离线测试把 REST 指到本地 http.server 桩用；生产环境勿设。
+# 尾斜杠归一：带 '/' 会拼出 '//api/v1/...' 双斜杠路径
+OC_BASE = os.environ.get("CANVAS_OC_BASE", "https://oc.sjtu.edu.cn").rstrip("/")
+RES_BASE = "https://v.sjtu.edu.cn/jy-application-resourcemanage"
+LTI_TOOL_ID = "8329"  # "课堂视频新版"；external_tools 列表 API 为空时此 id 仍可用
+SCREEN_VIEW_NUMS = {5, 6}  # 5=PPT 录屏，6=电子白板; 1-4/7 为教室机位
+UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126 Safari/537.36"
+)
+
+NS = "canvas-skill"
+WAIT_MEDIA = 3600  # D26：lec 束 inflight 等待预算（GB 级下载）
+PRODUCER = "canvas-get@1"
+
+
+def log(msg):
+    print(f"[canvas] {msg}", file=sys.stderr)
+
+
+def die(msg, code):
+    """出口码契约：2 参数错 / 3 无轨未镜像 / 4 已删 / 5 车道全挂或运行时。"""
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def load_token(cli=None):
+    tok = cli or os.environ.get("CANVAS_TOKEN") or ""
+    if not tok:
+        f = Path.home() / ".config/canvas-skill/token"
+        if f.is_file():
+            tok = f.read_text(encoding="utf-8").strip()
+    if not tok:
+        die("无 Canvas PAT：--token / $CANVAS_TOKEN / ~/.config/canvas-skill/token", 2)
+    return tok
+
+
+# --- lgc best-effort 调用面（全部不抛异常、不改出口码）----------------------
+def _lgc(argv, stdin=None):
+    """→ (rc, stdout, stderr)；lgc 缺席/异常一律 rc!=0 空输出。"""
+    p = shutil.which(LGC_BIN)
+    if not p:
+        return 127, "", ""
+    try:
+        r = subprocess.run([p, *argv], input=stdin, capture_output=True, text=True)
+        return r.returncode, r.stdout or "", r.stderr or ""
+    except Exception:
+        return 1, "", ""
+
+
+def _replay_lgc_lines(serr):
+    for line in serr.splitlines():
+        if line.startswith(("cache: ", "lgc: ")):
+            print(line, file=sys.stderr)
+
+
+def tok8(sess):
+    """D15：canvas 凭证域 = sha256(PAT)[:8]，tok8 已入全部键。"""
+    return hashlib.sha256(sess.token.encode("utf-8")).hexdigest()[:8]
+
+
+def cache_cat(key, cred):
+    """value 读出 → (rc, str)；refresh/off/缺席 → (1,"")。永不抛。"""
+    if os.environ.get("LGC_OFF") or os.environ.get("LGC_REFRESH"):
+        return 1, ""
+    if not _lgc_probe() or not _lgc_has("cat") or not _lgc_has("cred"):
+        return 1, ""
+    rc, sout, serr = _lgc(["cat", NS, key, "--cred", cred])
+    _replay_lgc_lines(serr)
+    return rc, sout
+
+
+def cache_vput(key, value, cred, ttl=None, secret=False):
+    """value 写入；缺 value/cred/ttl cap → 整条 no-op（不丢旗标）。
+    secret=True 且有 value-file cap → stdin 送值，载荷不进 argv（jwt 用）。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe():
+        return
+    if not _lgc_has("value") or not _lgc_has("cred"):
+        return
+    if secret and _lgc_has("value-file"):
+        argv = ["put", NS, key, "--value-file", "-", "--cred", cred]
+        stdin = str(value)
+    else:
+        argv = ["put", NS, key, "--value", str(value), "--cred", cred]
+        stdin = None
+    if ttl is not None:
+        if not _lgc_has("ttl"):
+            return
+        argv += ["--ttl", str(ttl)]
+    rc, _o, serr = _lgc(argv, stdin=stdin)
+    _replay_lgc_lines(serr)
+
+
+def cache_list(glob):
+    if os.environ.get("LGC_OFF") or not _lgc_probe() or not _lgc_has("list"):
+        return []
+    rc, sout, _ = _lgc(["list", NS, glob])
+    return sout.splitlines() if rc == 0 else []
+
+
+def cache_clear(key, cred):
+    """lgc clear <key>（jwt/donor/src 过期 evict）；cred 必带以匹配键域。"""
+    if (
+        os.environ.get("LGC_OFF")
+        or not _lgc_probe()
+        or not _lgc_has("clear")
+        or not _lgc_has("cred")
+    ):
+        return
+    _lgc(["clear", NS, key, "--cred", cred])
+
+
+def cache_release(key, cred):
+    """只清自己认领的 inflight marker（--owner-pid 匹配才清）。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe() or not _lgc_has("cred"):
+        return
+    _lgc(
+        [
+            "release",
+            NS,
+            key,
+            "--owner-pid",
+            str(os.getpid()),
+            "--cred",
+            cred,
+        ]
+    )
+
+
+def cache_get_lec(key, into, satisfies, cred):
+    """lec 束探测 → (rc, info|None)。hit 时 info={paths,files,params,…}。
+    旗标否决：缺任一 cap → 整条 miss，绝不丢旗标发降级 get。"""
+    if os.environ.get("LGC_OFF"):
+        print("cache: off", file=sys.stderr)
+        return 1, None
+    if os.environ.get("LGC_REFRESH"):
+        print("cache: miss", file=sys.stderr)
+        return 1, None
+    if not _lgc_probe():
+        print("cache: off", file=sys.stderr)
+        return 1, None
+    for cap in ("into", "wait", "satisfies", "claim", "owner-pid", "cred", "json"):
+        if not _lgc_has(cap):
+            print("cache: miss", file=sys.stderr)
+            return 1, None
+    rc, sout, serr = _lgc(
+        [
+            "get",
+            NS,
+            key,
+            "--into",
+            str(into),
+            "--wait",
+            str(WAIT_MEDIA),
+            "--satisfies",
+            json.dumps(satisfies),
+            "--claim",
+            "--owner-pid",
+            str(os.getpid()),
+            "--cred",
+            cred,
+            "--json",
+        ]
+    )
+    _replay_lgc_lines(serr)
+    if rc != 0:
+        return rc, None
+    try:
+        return 0, json.loads(sout)
+    except ValueError:
+        return 1, None
+
+
+def cache_put_lec(key, files, cred, params):
+    """lec 束入库（--keep --atomic --producer）；缺 cap → 整条 no-op。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe():
+        return
+    for cap in ("atomic", "keep-flag", "cred", "producer", "params", "owner-pid"):
+        if not _lgc_has(cap):
+            return
+    rc, _o, serr = _lgc(
+        [
+            "put",
+            NS,
+            key,
+            "--atomic",
+            "--keep",
+            "--producer",
+            PRODUCER,
+            "--cred",
+            cred,
+            "--params",
+            json.dumps(params),
+            "--owner-pid",
+            str(os.getpid()),
+            "--files",
+        ]
+        + [str(f) for f in files]
+    )
+    _replay_lgc_lines(serr)
+
+
+# ---------- HTTP ----------
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_a, **_kw):
+        return None
+
+
+class Session:
+    """共享 CookieJar 的两个 opener：sessionless_launch 响应链会 Set-Cookie
+    出真 session（_normandy_session 等），后续 OIDC 表单 POST 靠它鉴权。
+    Bearer 只加在 REST 调用上，不进全局头（避免泄露给 v.sjtu/CDN）。"""
+
+    def __init__(self, token):
+        self.token = token
+        jar = cookiejar.CookieJar()
+        self.follow = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(jar)
+        )
+        self.follow.addheaders = [("User-Agent", UA)]
+        self.nofollow = urllib.request.build_opener(
+            NoRedirect, urllib.request.HTTPCookieProcessor(jar)
+        )
+        self.nofollow.addheaders = [("User-Agent", UA)]
+
+
+def http(sess, url, data=None, extra_headers=None, follow=True, strict=True):
+    req = urllib.request.Request(
+        url,
+        data=urllib.parse.urlencode(data).encode() if data else None,
+        headers=extra_headers or {},
+    )
+    opener = sess.follow if follow else sess.nofollow
+    try:
+        resp = opener.open(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code in (301, 302, 303, 307, 308):
+            return e.code, dict(e.headers), b""
+        if not strict:
+            # 探索式调 API 时 404/403 是常态（课程没开某功能），不该杀进程
+            log(f"HTTP {e.code} {url} —— 返回空结果")
+            return e.code, dict(e.headers), e.read() or b""
+        raise
+    return resp.status, dict(resp.headers), resp.read()
+
+
+# D9 api 白名单：denylist 先行（sessionless_launch 永不经缓存——一次性签名
+# launch URL 入库即稳态死），其后精确正则表，其余一律不缓存。
+_API_DENY = re.compile(r"sessionless_launch")
+_API_ALLOW = (
+    (re.compile(r"^/courses$"), 1800),
+    (re.compile(r"^/courses/\d+/(files|discussion_topics|assignments)$"), 300),
+)
+
+
+def _shape_ok(data, expect):
+    """顶层 shape 归一：expect 未给不查；类型不符 → False（按 None 层处理）。
+    只查顶层——list 内元素非 dict 这类穿透由 main() 的 Exception 兜底收口。"""
+    return expect is None or isinstance(data, expect)
+
+
+def canvas_api(sess, path, refresh=False, expect=None, **params):
+    """Canvas REST API（OC_BASE/api/v1/...）：宽松模式，HTTP 错误返回 None。
+    expect=list/dict 做顶层 shape 校验：200 解码成功但类型不符 → None（同
+    解码失败层，且不入库）——否则 dict/str 穿透到假定 list-of-dicts 的调用
+    点炸 AttributeError（Phase0 二轮：错形 JSON 绕过 401/404/None 分层）。
+    D9：白名单 GET 入 api:<tok8>:<sha256(path+排序params)>（courses 30min、
+    files/ann/assign 5min），命中回放 JSON；非 200 一律不入库。files 的
+    签名下载链由 --download 恒绕缓存读保证消费侧新鲜（cmd_files）。"""
+    tk = tok8(sess)
+    ttl = None
+    ckey = None
+    if not _API_DENY.search(path):
+        for rx, t in _API_ALLOW:
+            if rx.match(path):
+                ttl = t
+                ph = hashlib.sha256(
+                    (
+                        path
+                        + "?"
+                        + urllib.parse.urlencode(
+                            sorted(params.items(), key=lambda kv: kv[0]),
+                            doseq=True,
+                        )
+                    ).encode("utf-8")
+                ).hexdigest()[:16]
+                ckey = f"api:{tk}:{ph}"
+                if not refresh:
+                    rc, cached = cache_cat(ckey, tk)
+                    if rc == 0:
+                        try:
+                            data = json.loads(cached)
+                        except ValueError:
+                            pass
+                        else:
+                            if _shape_ok(data, expect):
+                                return data
+                            # 错形条目视作 miss，落下去拉实时
+                break
+    url = f"{OC_BASE}/api/v1{path}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params, doseq=True)
+    status, _, body = http(
+        sess,
+        url,
+        extra_headers={"Authorization": f"Bearer {sess.token}"},
+        strict=False,
+    )
+    if status in (401, 403):
+        # auth_expired 是凭证域信号，绝不能降级成"空列表"——否则上层渲染成
+        # '共 0 门' 这类成功假象，PAT 过期被读成覆盖缺失（Phase0 缺陷 #3）
+        die(
+            f"Canvas API HTTP {status}：PAT 失效或权限不足"
+            "（更新 --token / $CANVAS_TOKEN / ~/.config/canvas-skill/token）",
+            5,
+        )
+    if status != 200:
+        # 其余非 200 维持"空"容忍：404=功能未开放/资源不存在、5xx=服务端抖动；
+        # http(strict=False) 已在 stderr 留状态行。网络层异常不经此层，向上抛
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not _shape_ok(data, expect):
+        return None
+    if ckey and b"sessionless_launch" not in body:
+        cache_vput(ckey, body.decode("utf-8", "replace"), tk, ttl=ttl)
+    return data
+
+
+def _form(page_html):
+    m = re.search(r"<form[^>]*action=[\"']([^\"']+)[\"']", page_html)
+    if not m:
+        return None
+    inputs = {}
+    for tag in re.findall(r"<input\b[^>]*>", page_html):
+        name = re.search(r"name=[\"']([^\"']+)[\"']", tag)
+        if not name:
+            continue
+        val = re.search(r"value=[\"']([^\"']*)[\"']", tag)
+        inputs[html.unescape(name.group(1))] = (
+            html.unescape(val.group(1)) if val else ""
+        )
+    return html.unescape(m.group(1)), inputs
+
+
+def api_get(sess, token, path, **params):
+    url = f"{RES_BASE}{path}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    _, _, body = http(sess, url, extra_headers={"jwt-token": token})
+    return json.loads(body)
+
+
+def jwt_api_get(sess, box, path, **params):
+    """实录 API GET 带一次重 launch：缓存 jwt 过期（下游 api_get 抛
+    HTTPError）→ evict 该 jwt 键 + box["relaunch"]() 换真 launch，重试一次。"""
+    try:
+        return api_get(sess, box["jwt"], path, **params)
+    except urllib.error.HTTPError:
+        box["jwt"] = box["relaunch"]()
+        return api_get(sess, box["jwt"], path, **params)
+
+
+# ---------- LTI 1.3 launch ----------
+
+
+class LtiError(Exception):
+    """LTI launch 失败（课程无实录入口、OIDC 表单缺失、token 未回传等）。"""
+
+
+def lti_launch(sess, course_id):
+    """jwt:<tok8>:<cid>（lgc 内置 20min，LGC_CANVAS_JWT_TTL 可调）+
+    tecl:<tok8>:<cid>（180d）双层 value 缓存；双命中用之，否则真 launch 写回。
+    probe 顺序钉死 jwt→src→lec（camera=N 需先经 sources 解析 viewNum）。"""
+    tk = tok8(sess)
+    rc, jwt = cache_cat(f"jwt:{tk}:{course_id}", tk)
+    rc2, tecl = cache_cat(f"tecl:{tk}:{course_id}", tk)
+    if rc == 0 and rc2 == 0 and jwt.strip() and tecl.strip():
+        log("LTI 鉴权（缓存 jwt）")
+        return jwt.strip(), tecl.strip()
+    return _lti_store(sess, course_id, tk)
+
+
+def _lti_store(sess, course_id, tk):
+    jwt, tecl = lti_launch_real(sess, course_id)
+    cache_vput(f"jwt:{tk}:{course_id}", jwt, tk, secret=True)
+    cache_vput(f"tecl:{tk}:{course_id}", str(tecl), tk)
+    return jwt, tecl
+
+
+def lti_launch_real(sess, course_id):
+    # PAT 换 sessionless launch URL；跟随其重定向链即得真 session cookie
+    data = canvas_api(
+        sess,
+        f"/courses/{course_id}/external_tools/sessionless_launch",
+        expect=dict,
+        id=LTI_TOOL_ID,
+    )
+    if not data or not data.get("url"):
+        raise LtiError("课程无课堂实录入口（sessionless_launch 未返回 URL）")
+
+    _, _, body = http(sess, data["url"])
+    form = _form(body.decode("utf-8", "replace"))
+    if not form:
+        raise LtiError("未找到 OIDC 登录初始化表单")
+    _, _, body = http(sess, form[0], data=form[1])
+    form2 = _form(body.decode("utf-8", "replace"))
+    if not form2:
+        raise LtiError("未找到 id_token 回传表单")
+
+    status, headers, _ = http(sess, form2[0], data=form2[1], follow=False)
+    location = headers.get("Location") or headers.get("location") or ""
+    frag = urllib.parse.urlparse(location).fragment
+    token = urllib.parse.parse_qs(frag.split("?", 1)[1] if "?" in frag else frag).get(
+        "jwt_token"
+    )
+    if not token:
+        raise LtiError(f"LTI launch 未返回 jwt_token（HTTP {status}）")
+
+    ctx = api_get(sess, token[0], "/lms/launch-context")
+    data = ctx.get("data") or {}
+    if data.get("launchType") != "CANVAS_RECORD":
+        raise LtiError(f"暂不支持的实录入口类型：{data.get('launchType')}")
+    tecl = (data.get("canvasRecord") or {}).get("teachingClassId") or (
+        data.get("course") or {}
+    ).get("teachingClassId")
+    if not tecl:
+        raise LtiError("launch-context 未返回 teachingClassId")
+    log("LTI 鉴权完成")
+    return token[0], str(tecl)
+
+
+# ---------- play-center 分享链接 ----------
+
+# 前端 jy-application-resourcemanage-ui 硬编码的 query 加密参数（crypto-js，
+# 见其 index.*.js 的 AES 模块）：AES-128-CBC + Pkcs7，明文带
+# "__encrypted_query__:" 前缀，形如 "teclId=8929&target=video"。
+PLAY_KEY_HEX = "6a792d7265736f757263652d71727931"  # "jy-resource-qry1"
+PLAY_IV_HEX = "6a792d71756572792d69762d30303031"  # "jy-query-iv-0001"
+
+
+def play_tecl_id(url):
+    """play-center 链接 -> teclId（纯本地解密，不发请求）。失败返回 None。"""
+    m = re.search(r"play-center\?([^&#]+)", url)
+    if not m:
+        return None
+    try:
+        ct = base64.b64decode(urllib.parse.unquote(m.group(1)))
+    except ValueError:
+        return None
+    r = subprocess.run(
+        [
+            "openssl",
+            "enc",
+            "-d",
+            "-aes-128-cbc",
+            "-K",
+            PLAY_KEY_HEX,
+            "-iv",
+            PLAY_IV_HEX,
+        ],
+        input=ct,
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        return None
+    m = re.search(rb"teclId=(\d+)", r.stdout)
+    return m.group(1).decode() if m else None
+
+
+def donor_token(sess):
+    """play-center 链接只有 teclId：借任一有实录入口的在选课程的 LTI token。
+
+    已验证该 token 不按课程隔离——一门课的 token 可查其它 teclId 的讲次。
+    donor:<tok8> 存的是能 launch 的 donor 课程 id（7d）：命中仍走
+    lti_launch 拿真 token；LtiError → evict + 重扫全部在选课程且绕 api
+    缓存读（否则 30min 窗口内新选课不可见）。→ (jwt, donor_course_id)。
+    """
+    tk = tok8(sess)
+    errs = []
+    rc, cid = cache_cat(f"donor:{tk}", tk)
+    if rc == 0 and cid.strip():
+        cid = cid.strip()
+        try:
+            token, _ = lti_launch(sess, cid)
+            log(f"借 {cid} 的 LTI token（donor 缓存）")
+            return token, cid
+        except Exception as e:  # LtiError 或网络层失败 → evict + 重扫
+            errs.append(f"{cid}: {e}")
+            cache_clear(f"donor:{tk}", tk)
+    courses = canvas_api(
+        sess,
+        "/courses",
+        enrollment_state="active",
+        per_page=100,
+        refresh=True,
+        expect=list,
+    )
+    if courses is None:
+        # 列表源挂了扫不出 donor：显性失败，别报"所有课程 launch 均失败"（errs 空）
+        die("拉取在选课程列表失败，无法扫描 donor（见上方 HTTP 状态行）", 5)
+    for c in courses:
+        cid = str(c.get("id") or "")
+        try:
+            token, _ = lti_launch(sess, cid)
+        except Exception as e:  # 单课 launch 失败不拖垮整轮扫描
+            errs.append(f"{cid}: {e}")
+            continue
+        name = c.get("name") or c.get("course_code") or "?"
+        log(f"借 {cid}（{name}）的 LTI token")
+        cache_vput(f"donor:{tk}", cid, tk)
+        return token, cid
+    die("所有在选课程 LTI launch 均失败：\n  " + "\n  ".join(errs), 5)
+
+
+# ---------- 讲次与播流 ----------
+
+
+def list_lectures(sess, box, tecl_id):
+    payload = jwt_api_get(
+        sess,
+        box,
+        "/v1/subject_vod_list_new",
+        **{
+            "page.pageIndex": 1,
+            "page.pageSize": 1000,
+            "teclIds": tecl_id,
+            "page.orders[0].asc": "true",
+            "page.orders[0].field": "courBeginTime",
+        },
+    )
+    records = (payload.get("data") or {}).get("records") or []
+    return [r for r in records if r.get("vodEnable") in (None, 1)]
+
+
+def _lec_sig(records):
+    """讲次列表签名：lec-list 展示快照 vs 实时列表的漂移判据。"""
+    return [
+        [
+            str(r.get("id") or r.get("courId") or ""),
+            str(r.get("subjName") or r.get("courName") or ""),
+            str(r.get("courBeginTime") or ""),
+        ]
+        for r in records
+    ]
+
+
+def lecture_title(rec, index):
+    name = rec.get("subjName") or rec.get("courName") or "lecture"
+    week = rec.get("week") or rec.get("weekNumber") or rec.get("weekNo")
+    begin = str(rec.get("courBeginTime") or "")
+    end = str(rec.get("courEndTime") or "")
+    span = f"{begin[:16]}-{end[11:16] if len(end) >= 16 else end}".strip("-")
+    return (
+        " ".join(p for p in (name, f"第{week}周" if week else "", span) if p)
+        or f"lecture-{index:02d}"
+    )
+
+
+def _slug(text):
+    """--all 子目录名：<cour_id>--<slug>（保 CJK，剥路径敌意字符）。"""
+    s = re.sub(r"[^\w.-]+", "-", text).strip("-.")
+    s = re.sub(r"-{2,}", "-", s)
+    return s[:60].rstrip("-.") or "lec"
+
+
+def vod_sources(sess, box, cour_id):
+    payload = jwt_api_get(sess, box, "/v1/course_vod_urls_new", courseId=cour_id)
+    detail = payload.get("data") or payload.get("body") or {}
+    out, seen = [], set()
+    for item in detail.get("courseVodViewList") or []:
+        url = item.get("url") or ""
+        if not url.startswith("http"):
+            continue
+        path = urllib.parse.urlparse(url).path
+        if path in seen:
+            continue
+        seen.add(path)
+        vn = item.get("viewNum")
+        try:
+            vn = int(vn)
+        except (TypeError, ValueError):
+            vn = None
+        out.append(
+            {
+                "url": url,
+                "viewNum": vn,
+                "kind": "screen" if vn in SCREEN_VIEW_NUMS else "classroom",
+            }
+        )
+    return out
+
+
+def get_sources(sess, box, cour_id, tk):
+    """src:<tok8>:<cour> 10min value 缓存（probe 顺序 jwt→src→lec）。"""
+    key = f"src:{tk}:{cour_id}"
+    rc, val = cache_cat(key, tk)
+    if rc == 0:
+        try:
+            cached = json.loads(val)
+            if isinstance(cached, list) and cached:
+                return cached
+        except ValueError:
+            pass
+    sources = vod_sources(sess, box, cour_id)
+    if sources:
+        cache_vput(key, json.dumps(sources), tk)
+    return sources
+
+
+def pick_sources(sources, cam, n):
+    if cam == "all":
+        return list(sources)
+    if cam != "auto":
+        return [sources[n - 1]] if n and 1 <= n <= len(sources) else []
+    return [next((s for s in sources if s["kind"] == "screen"), sources[0])]
+
+
+def _view_tag(sources, s):
+    """机位 tag：viewNum 优先，缺省退 sources 内 1 基位置——satisfies/命名/
+    files_meta 三处同口径；None 不可进 satisfies（lgc 侧按 int 判等）。"""
+    vn = s.get("viewNum")
+    if vn is not None:
+        return vn
+    try:
+        return sources.index(s) + 1
+    except ValueError:
+        return 0
+
+
+# ---------- 下载与产物 ----------
+
+
+def download(sess, url, dest):
+    """dest.part → rename：半成品不留成正式名；异常路径 also 清掉 .part。"""
+    tmp = dest.parent / (dest.name + ".part")
+    req = urllib.request.Request(
+        url, headers={"User-Agent": UA, "Referer": "https://v.sjtu.edu.cn/"}
+    )
+    try:
+        with sess.follow.open(req, timeout=60) as r, open(tmp, "wb") as f:
+            total = int(r.headers.get("content-length") or 0)
+            done = 0
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    print(
+                        f"\r[canvas] {dest.name}: {done * 100 // total}%",
+                        end="",
+                        file=sys.stderr,
+                    )
+        os.replace(tmp, dest)
+        print(f"\r[canvas] {dest.name}: {done >> 20} MiB done", file=sys.stderr)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def has_audio(path):
+    r = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return "audio" in r.stdout
+
+
+def extract_audio(video, wav):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(wav),
+        ],
+        capture_output=True,
+    )
+
+
+def extract_cover(video, jpg, at):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(at),
+            "-i",
+            str(video),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            str(jpg),
+        ],
+        capture_output=True,
+    )
+
+
+# ---------- Canvas REST 轻量子命令（不走 LTI） ----------
+
+
+def resolve_course_id(url):
+    m = re.search(r"/courses/(\d+)", url)
+    return m.group(1) if m else url.strip()
+
+
+def cmd_list_courses(sess):
+    courses = canvas_api(
+        sess, "/courses", enrollment_state="active", per_page=100, expect=list
+    )
+    if courses is None:
+        # None=非 200 非认证错误（404/5xx/解码失败），≠ 真空列表——不许出 '共 0 门'
+        die("课程列表拉取失败（见上方 HTTP 状态行）", 5)
+    for c in courses:
+        name = c.get("name") or c.get("course_code") or "?"
+        print(f"{c.get('id'):>8}  {name}")
+    print(f"\n共 {len(courses)} 门；用课程页 URL 或 ID 作参数", file=sys.stderr)
+
+
+def cmd_files(sess, course_id, download_dir=None):
+    tk = tok8(sess)
+    page = 1
+    seen = 0
+    while True:
+        # --download 恒绕 api 缓存读：files[].url 是签名链，消费必须新鲜
+        files = canvas_api(
+            sess,
+            f"/courses/{course_id}/files",
+            refresh=bool(download_dir),
+            per_page=100,
+            page=page,
+            sort="updated_at",
+            order="desc",
+            expect=list,
+        )
+        if not files:
+            break
+        for f in files:
+            seen += 1
+            size = (f.get("size") or 0) / 1024
+            print(
+                f"{f.get('id'):>9}  {size:8.0f}KB  "
+                f"{(f.get('updated_at') or '')[:10]}  {f.get('display_name')}"
+            )
+            if download_dir and f.get("url"):
+                dn = Path(f.get("display_name") or "").name
+                if (
+                    not dn
+                    or dn in (".", "..")
+                    or os.sep in (f.get("display_name") or "")
+                ):
+                    dn = f"file-{f.get('id')}"
+                dest = Path(download_dir) / dn
+                # file:<tok8>:<fid> 存 {size,updated_at}；dest 一致 → 跳过
+                fkey = f"file:{tk}:{f.get('id')}"
+                skip = False
+                rc, meta = cache_cat(fkey, tk)
+                if rc == 0 and dest.is_file():
+                    try:
+                        st = json.loads(meta)
+                        skip = dest.stat().st_size == int(
+                            st.get("size") or -1
+                        ) and st.get("updated_at") == f.get("updated_at")
+                    except (ValueError, OSError):
+                        skip = False
+                if skip:
+                    log(f"  未变跳过 {dest.name}")
+                    continue
+                try:
+                    download(sess, f["url"], dest)
+                    cache_vput(
+                        fkey,
+                        json.dumps(
+                            {
+                                "size": dest.stat().st_size,
+                                "updated_at": f.get("updated_at"),
+                            }
+                        ),
+                        tk,
+                    )
+                except Exception as e:  # 单个文件失败不拖垮整批
+                    log(f"  下载失败 {dest.name}: {e}")
+        if len(files) < 100:
+            break
+        page += 1
+    if not seen:
+        print("（该课程未开放文件区或无文件）", file=sys.stderr)
+
+
+def cmd_announcements(sess, course_id):
+    topics = canvas_api(
+        sess,
+        f"/courses/{course_id}/discussion_topics",
+        only_announcements="true",
+        per_page=50,
+        expect=list,
+    )
+    if not topics:
+        print("（无公告或该课程未开放）", file=sys.stderr)
+        return
+    for t in topics:
+        body = re.sub(r"<[^>]+>", " ", t.get("message") or "")
+        body = " ".join(body.split())[:200]
+        print(f"- {(t.get('posted_at') or '')[:10]}  {t.get('title')}\n    {body}")
+
+
+def cmd_assignments(sess, course_id):
+    items = canvas_api(
+        sess, f"/courses/{course_id}/assignments", per_page=100, expect=list
+    )
+    if not items:
+        print("（无作业或该课程未开放）", file=sys.stderr)
+        return
+    for a in items:
+        due = (a.get("due_at") or "")[:16].replace("T", " ") or "无截止"
+        print(f"- {due}  {a.get('name')}  ({a.get('points_possible') or 0}分)")
+
+
+def cmd_mint(sess, course_id):
+    """--mint：lti_launch 铸 jwt:<tok8>:<cid>+tecl:<tok8>:<cid> 双 lgc value 键——
+    meta-lane 的 cred 生产面。只回显键名与 tecl 值，jwt 永不出 stdout。"""
+    _jwt, tecl = lti_launch(sess, course_id)
+    tk = tok8(sess)
+    print(f"minted jwt:{tk}:{course_id}")
+    print(f"tecl:{tk}:{course_id} = {tecl}")
+
+
+def _main():
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "url", nargs="?", help="课程页 URL / 课程 ID / play-center 分享链接"
+    )
+    ap.add_argument("-o", "--out", default=".")
+    ap.add_argument("--lecture", type=int, help="第 N 讲（按上课时间排序）")
+    ap.add_argument("--all", action="store_true", help="下载全部讲次")
+    ap.add_argument(
+        "--camera",
+        default="auto",
+        help="auto(默认，优先 PPT 录屏) | all | 机位序号 N",
+    )
+    ap.add_argument(
+        "--cover-at",
+        default="120",
+        metavar="SEC|MM:SS",
+        help="封面抽帧时刻（默认 120s；课前常为签到/待机画面，建议取第一页标题 slide 时段）",
+    )
+    ap.add_argument(
+        "--token",
+        help="Canvas PAT（默认 $CANVAS_TOKEN 或 ~/.config/canvas-skill/token）",
+    )
+    ap.add_argument("--list-courses", action="store_true", help="列我在选的课")
+    ap.add_argument("--files", action="store_true", help="列/下载课程文件")
+    ap.add_argument("--download", metavar="DIR", help="配合 --files 下载到目录")
+    ap.add_argument("--announcements", action="store_true", help="列课程公告")
+    ap.add_argument("--assignments", action="store_true", help="列作业与截止时间")
+    ap.add_argument(
+        "--mint",
+        action="store_true",
+        help="为课程铸 LTI jwt/tecl 凭证键（cred store 预生产）",
+    )
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="跳过全部缓存读（正/负/车道级），成功仍写回",
+    )
+    ap.add_argument("--no-cache", action="store_true", help="读写全绕缓存 = 裸行为")
+    ap.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=None,
+        metavar="SEC",
+        help="覆盖本次正缓存 TTL（不作用负缓存）",
+    )
+    args = ap.parse_args()
+    if args.refresh:
+        os.environ["LGC_REFRESH"] = "1"
+    if args.no_cache:
+        os.environ["LGC_OFF"] = "1"
+    if args.cache_ttl is not None:
+        os.environ["LGC_TTL"] = str(args.cache_ttl)
+
+    if not args.url and not args.list_courses:
+        ap.error("需要课程页 URL / 课程 ID，或 --list-courses")
+
+    cam = args.camera
+    if cam not in ("auto", "all") and not cam.isdigit():
+        die(f"--camera {cam} 无效（auto|all|机位序号 N）", 2)
+
+    # play-center 链接纯本地解密，失败立刻报
+    play_tecl = None
+    if args.url and ("v.sjtu.edu.cn" in args.url or "play-center" in args.url):
+        play_tecl = play_tecl_id(args.url)
+        if not play_tecl:
+            die("play-center 参数解密失败：链接不完整或前端密钥已轮换", 2)
+
+    sess = Session(load_token(args.token))
+    tk = tok8(sess)
+
+    if args.list_courses:
+        cmd_list_courses(sess)
+        return
+
+    if play_tecl and (
+        args.files or args.announcements or args.assignments or args.mint
+    ):
+        die(
+            "play-center 链接只支持实录列表/下载；课程资源子命令请改用 "
+            "oc.sjtu.edu.cn 课程页 URL",
+            2,
+        )
+
+    course_id = None if play_tecl else resolve_course_id(args.url)
+
+    # 轻量资源子命令：REST API 直走，不做 LTI launch
+    if args.files:
+        cmd_files(sess, course_id, args.download)
+        return
+    if args.announcements:
+        cmd_announcements(sess, course_id)
+        return
+    if args.assignments:
+        cmd_assignments(sess, course_id)
+        return
+    if args.mint:
+        cmd_mint(sess, course_id)
+        return
+
+    out = Path(args.out)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        die(f"无法创建输出目录：{e}", 5)
+
+    # --- 讲次列表：lec-list 15min 仅服务展示；--lecture/--all 恒实时拉 ---
+    # 展示路径先拿 tecl 探快照（play 链接本地已知；课程路径 probe tecl 缓存），
+    # 命中即展示——不为一次缓存命中白做 LTI launch。
+    live = bool(args.lecture or args.all)
+    lectures = None
+    lec_list_key = None
+    if not live:
+        if play_tecl:
+            pre_tecl = play_tecl
+        else:
+            rc, t = cache_cat(f"tecl:{tk}:{course_id}", tk)
+            pre_tecl = t.strip() if rc == 0 else None
+        if pre_tecl:
+            lec_list_key = f"lec-list:{tk}:{pre_tecl}"
+            rc, snap = cache_cat(lec_list_key, tk)
+            if rc == 0:
+                try:
+                    lectures = json.loads(snap)
+                except ValueError:
+                    lectures = None
+
+    box = None
+    tecl_id = None
+    if lectures is None:
+        # --- LTI 鉴权（jwt/tecl/donor 三层 value 缓存） ---
+        if play_tecl:
+            jwt, donor_cid = donor_token(sess)
+            tecl_id = play_tecl
+            box = {"jwt": jwt, "course_id": donor_cid, "tecl": tecl_id}
+
+            def _relaunch_donor():
+                cache_clear(f"jwt:{tk}:{box['course_id']}", tk)
+                j, c = donor_token(sess)
+                box["course_id"] = c
+                return j
+
+            box["relaunch"] = _relaunch_donor
+            log(f"play-center 链接 -> 教学班 teclId={tecl_id}")
+        else:
+            try:
+                jwt, tecl_id = lti_launch(sess, course_id)
+            except Exception as e:  # LtiError 或网络层失败 → 车道全挂 5
+                die(str(e), 5)
+            box = {"jwt": jwt, "course_id": course_id, "tecl": tecl_id}
+
+            def _relaunch_course():
+                # 缓存 jwt 被下游判死：evict 该键再经缓存层重 launch 一次
+                cache_clear(f"jwt:{tk}:{course_id}", tk)
+                j, t = lti_launch(sess, course_id)
+                box["tecl"] = t
+                return j
+
+            box["relaunch"] = _relaunch_course
+
+        lec_list_key = f"lec-list:{tk}:{tecl_id}"
+        try:
+            lectures = list_lectures(sess, box, tecl_id)
+        except urllib.error.HTTPError as e:
+            die(f"实录列表拉取失败：HTTP {e.code}", 5)
+        except Exception as e:  # LtiError 或网络层失败 → 车道全挂 5
+            die(str(e), 5)
+        if lectures:
+            rc, snap = cache_cat(lec_list_key, tk)
+            try:
+                old = json.loads(snap) if rc == 0 else None
+            except ValueError:
+                old = None
+            if live and old is not None and _lec_sig(old) != _lec_sig(lectures):
+                log("警告：讲次列表已变化——此前展示的列表快照已陈旧，序号可能偏移")
+            cache_vput(lec_list_key, json.dumps(lectures, ensure_ascii=False), tk)
+    if not lectures:
+        die("该课程暂无已生成点播的实录", 3)
+
+    if not args.lecture and not args.all:
+        # cour_id 打进列表：可与本地 canvas/<cour_id>--* 目录机械比对增量。
+        # 扫 --out 本身、--out 同级、cwd 与 cwd/canvas 四处已有目录；
+        # lgc lec:* 束另打 [已缓存]（用户删了 -o 也能秒回）。
+        local = set()
+        for base in (out, out.parent, Path.cwd(), Path.cwd() / "canvas"):
+            if base.is_dir():
+                local |= {p.name.split("--")[0] for p in base.glob("*--*")}
+        cached = {
+            m.group(1)
+            for k in cache_list("lec:*")
+            for m in [re.match(r"lec:([^#]+)", k)]
+            if m
+        }
+        for i, r in enumerate(lectures, 1):
+            cid = str(r.get("id") or r.get("courId") or "")
+            if cid and cid in local:
+                mark = "  [已下载]"
+            elif cid and cid in cached:
+                mark = "  [已缓存]"
+            else:
+                mark = ""
+            # vodClickEnable 缺省不判；显式 0 多半还在转码/未发布
+            if r.get("vodClickEnable") in (0, "0", False):
+                mark += "  [不可点播？]"
+            print(f"{i:2d}. [cour_id={cid}] {lecture_title(r, i)}{mark}")
+        print("\n用 --lecture N 选择一讲，--all 下载全部", file=sys.stderr)
+        return
+
+    picked = range(1, len(lectures) + 1) if args.all else [args.lecture]
+    done = 0
+    for idx in picked:
+        if not (1 <= idx <= len(lectures)):
+            die(f"--lecture {idx} 超出范围（共 {len(lectures)} 讲）", 2)
+        rec = lectures[idx - 1]
+        title = lecture_title(rec, idx)
+        cour_id = str(rec.get("id") or rec.get("courId") or "")
+        log(f"[{idx}/{len(lectures)}] {title}")
+        unlisted = rec.get("vodClickEnable") in (0, "0", False)
+        if unlisted:
+            log("  警告：该讲标记为不可点播（可能仍在转码），仍尝试拉流…")
+        # --all 每讲独立 <cour_id>--<slug>/ 子目录（修同目录同名互覆）；
+        # --lecture 保持平铺进 -o。
+        lec_dir = out / f"{cour_id}--{_slug(title)}" if args.all else out
+        lec_key = f"lec:{cour_id}"
+        try:
+            # probe 顺序钉死 jwt→src→lec：src 解析 viewNum 供 satisfies
+            sources = get_sources(sess, box, cour_id, tk)
+            if not sources:
+                log("  无可用播流，跳过")
+                continue
+            lec_dir.mkdir(parents=True, exist_ok=True)  # 有源才建（--all 不留空壳）
+            n = int(cam) if cam.isdigit() else None
+            if cam == "all":
+                satisfies = {"camera": "all"}
+            else:
+                if cam == "auto":
+                    pick = next(
+                        (s for s in sources if s["kind"] == "screen"), sources[0]
+                    )
+                else:
+                    if not (1 <= n <= len(sources)):
+                        die(f"--camera {n} 超出范围（共 {len(sources)} 个源）", 2)
+                    pick = sources[n - 1]
+                # auto/N 统一解析成具体机位 tag：auto 不再抽象匹配"任一 screen"，
+                # N 在 viewNum 缺席时退位置序——束语义与命名同口径
+                satisfies = {"camera": _view_tag(sources, pick)}
+
+            rc, info = cache_get_lec(lec_key, lec_dir, satisfies, tk)
+            if rc == 0 and info:
+                # 命中：回放产物；cover_at 不符→缓存 video 就地重抽；
+                # 缺 audio.wav→就地重抽（D7）。
+                names = {f.get("name") for f in info.get("files") or []}
+                mparams = info.get("params") or {}
+                want_name = None
+                if cam != "all":
+                    # 束可能产自 --camera all 全机位入库：materialize 已交付
+                    # 整束，只留本次挑中机位的 mp4（fv 缺席=不可证，保守留）
+                    want = {
+                        _view_tag(sources, s) for s in pick_sources(sources, cam, n)
+                    }
+                    for f in info.get("files") or []:
+                        fn = f.get("name") or ""
+                        fv = f.get("viewNum")
+                        if fn.endswith(".mp4") and fv is not None and fv not in want:
+                            (lec_dir / fn).unlink(missing_ok=True)
+                            names.discard(fn)
+                    want_name = next(
+                        (
+                            f.get("name")
+                            for f in info.get("files") or []
+                            if f.get("viewNum") in want
+                            and (f.get("name") or "") in names
+                        ),
+                        None,
+                    )
+                vname = want_name or mparams.get("cover_source")
+                if not vname or vname not in names:
+                    vname = next((x for x in sorted(names) if x.endswith(".mp4")), None)
+                if vname:
+                    vpath = lec_dir / vname
+                    if (
+                        str(mparams.get("cover_at")) != str(args.cover_at)
+                        or not (lec_dir / "cover.jpg").is_file()
+                    ):
+                        extract_cover(vpath, lec_dir / "cover.jpg", args.cover_at)
+                    if not (lec_dir / "audio.wav").is_file():
+                        extract_audio(vpath, lec_dir / "audio.wav")
+                for p in info.get("paths") or []:
+                    print(f"==> 已存 {p}（cache）", file=sys.stderr)
+                log(f"完成 -> {lec_dir}（缓存命中）")
+                done += 1
+                continue
+
+            # miss → 实时抓取；产物先落盘交付，再入库（lgc 不在交付路径）
+            chosen = pick_sources(sources, cam, n)
+            saved = []
+            multi = len(chosen) > 1
+            retried = False
+            j = 0
+            while j < len(chosen):
+                s = chosen[j]
+                name = (
+                    f"camera{_view_tag(sources, s)}.mp4"
+                    if (multi or cam != "auto")
+                    else "video.mp4"
+                )
+                dest = lec_dir / name
+                try:
+                    download(sess, s["url"], dest)
+                except urllib.error.HTTPError as e:
+                    if e.code == 403 and not retried:
+                        # 播流签名 URL 过期：evict src + 实时重拉一次
+                        retried = True
+                        log("  播流 URL 403（签名过期）→ 重拉 sources 重试")
+                        cache_clear(f"src:{tk}:{cour_id}", tk)
+                        fresh = vod_sources(sess, box, cour_id)
+                        if fresh:
+                            cache_vput(f"src:{tk}:{cour_id}", json.dumps(fresh), tk)
+                            sources = fresh  # tag/meta 口径随新源
+                            chosen = pick_sources(fresh, cam, n)
+                        if j >= len(chosen):
+                            raise
+                        continue
+                    raise
+                saved.append((dest, s))
+                j += 1
+
+            video = next((p for p, _ in saved if p.name == "video.mp4"), saved[0][0])
+            if not has_audio(video):
+                alt = next((p for p, _ in saved if has_audio(p)), None)
+                if alt:
+                    video = alt
+                else:
+                    log("  警告：所下载源均无音轨")
+            extract_audio(video, lec_dir / "audio.wav")
+            extract_cover(video, lec_dir / "cover.jpg", args.cover_at)
+            (lec_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "platform": "sjtu-canvas",
+                        "course_id": course_id,
+                        "tecl_id": tecl_id,
+                        "lecture_index": idx,
+                        "cour_id": cour_id,
+                        "title": title,
+                        "begin": rec.get("courBeginTime"),
+                        "end": rec.get("courEndTime"),
+                        "sources": [
+                            {"viewNum": s["viewNum"], "kind": s["kind"]}
+                            for s in sources
+                        ],
+                        "lectures": [
+                            {"index": i, "title": lecture_title(r, i)}
+                            for i, r in enumerate(lectures, 1)
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            # 入库判定：vodClickEnable==0 或 video<1MB 拒收（不缓存仍可交付）
+            bundle = [p for p, _ in saved]
+            for extra in ("audio.wav", "cover.jpg", "meta.json"):
+                p = lec_dir / extra
+                if p.is_file() and p.stat().st_size > 0:
+                    bundle.append(p)
+            vsize = video.stat().st_size if video.is_file() else 0
+            if unlisted or vsize < (1 << 20):
+                log("  跳过入库（不可点播或视频体积异常）")
+            else:
+                fmeta = {
+                    p.name: {"viewNum": _view_tag(sources, s), "kind": s.get("kind")}
+                    for p, s in saved
+                }
+                cache_put_lec(
+                    lec_key,
+                    bundle,
+                    tk,
+                    {
+                        "has_all": cam == "all",
+                        "cover_at": str(args.cover_at),
+                        "cover_source": video.name,
+                        "files_meta": fmeta,
+                    },
+                )
+        except Exception as e:
+            die(f"下载失败：{e}", 5)
+        finally:
+            cache_release(lec_key, tk)
+        log(f"完成 -> {lec_dir}（audio.wav 已备好，跑 asr transcribe.py 转写）")
+        done += 1
+    if args.lecture and done == 0:
+        die(f"第 {args.lecture} 讲未交付（无可用播流或下载失败）", 5)
+
+
+def main():
+    """网络层异常兜底 + 最后保险：干净 stderr 一行 + exit 5，绝不吐 traceback。
+    捕获顺序钉死：HTTPError 是 URLError 子类必须在前；OSError 兜住
+    socket.timeout/连接重置/TLS 等 read 期异常；HTTPException 兜协议错；
+    Exception 兜底穿透分层的未预期错（如错形 JSON 元素上的 AttributeError）。
+    SystemExit(die)/KeyboardInterrupt 非 Exception 子类，天然穿透不被吞。"""
+    try:
+        _main()
+    except urllib.error.HTTPError as e:
+        die(f"HTTP {e.code} {getattr(e, 'url', '')}", 5)
+    except urllib.error.URLError as e:
+        die(f"网络错误：{getattr(e, 'reason', e)}", 5)
+    except (OSError, HTTPException) as e:
+        die(f"网络/IO 错误：{e}", 5)
+    except Exception as e:
+        die(f"内部错误 {type(e).__name__}：{e}", 5)
+
+
+if __name__ == "__main__":
+    main()

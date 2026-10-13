@@ -1,0 +1,18 @@
+# skill-management 自身依赖
+
+[[dep]]
+name = "python3.11+"
+check = "python3 -c 'import tomllib'"
+version = "python3 --version"
+install = { linux = "sudo pacman -S --needed python", darwin = "brew install python@3.13" }
+
+[[dep]]
+name = "git"
+check = "command -v git"
+install = { linux = "sudo pacman -S --needed git", darwin = "brew install git" }
+
+[[dep]]
+name = "jq"
+check = "command -v jq"
+optional = true   # 缺了 doctor 只是跳过 instructionFiles 检查
+install = { linux = "sudo pacman -S --needed jq", darwin = "brew install jq" }

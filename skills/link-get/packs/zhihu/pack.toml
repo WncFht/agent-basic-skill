@@ -1,0 +1,124 @@
+# zhihu pack — 拆解版：zhihu-get:435-515 kind×variant 级联 → routes + lanes/ 真 exec。
+# routes 首中胜、params 子集真值；art/q 不约束 comments→default 臂；kind 落空→rc2（connector exit2 平价）。
+cred_domain = "zhihu"   # zhihu-skill cookie/settings.toml → lgc zhihu 域（cred-scoped 记账）
+
+[pack]
+name = "zhihu"
+abi = 1
+ns = "zhihu-skill"
+kinds = ["ans", "art", "q", "col", "ppl", "zv", "pin"]
+kind_required = true
+kind_hint = "收藏夹用 JasonJarvan/Zhihu-Collections-MCP（公开免 cookie），其余形态见 references/routing.md"
+desc = "按 URL 形态定 kind → 车道级联：tardis 免登录镜像 → zhcli → scraper → jina → firecrawl"
+[match]
+hosts = ["zhihu.com", "www.zhihu.com", "*.zhihu.com", "zhuanlan.zhihu.com"]
+schemes = ["http", "https"]
+[identity]
+keyexpr = "{kind}:{id}{variant}"   # ans:456 / +c / +f ≡ connector zkey() 变体键
+key_params = ["variant"]           # variant ∈ {"", "+c", "+f"} 由分发层按旗标填；
+                                   # 清空重渲即得 base_key——车道账/probe 基键自动派生
+# kind_by_url 只判形状（connector case 臂同样只认 path 段，不要求 id 可解析）；
+# id 解不出时 keyexpr 回退 {kind}:{url}——车道照跑，缓存键退化为 per-URL。
+# 顺序即优先级：answer 先于 question（/question/q/answer/a 是 ans）；
+# /p/ 先于 question（question/1/p/2 归 art——zhihu-get:455 臂先于 :468）。
+kind_by_url = { ans = 'answer/', art = '/p/', q = 'question/', col = '(?:column/|zhuanlan\.zhihu\.com/)', ppl = 'people/', zv = 'zvideo/', pin = 'pin/' }
+capture = { id = { ans = 'answer/([0-9]+)', art = '/p/([0-9]+)', q = 'question/([0-9]+)', col = '(?:column/|zhuanlan\.zhihu\.com/)([A-Za-z0-9_-]+)', ppl = 'people/([A-Za-z0-9_-]+)', zv = 'zvideo/([0-9]+)', pin = 'pin/([0-9]+)' } }
+# path 匹配面：kind/capture 只在 netloc+path 上判——?utm=/p/999 这类 query
+# 注入不造 kind 不污键（pattern 全是 path 段语义，query 面本就不该吃）
+match_scope = "path"
+probe_base_variants = ["+f"]   # +f 先探基键 {kind}:{id} 再探变体键（ZBASE→ZK：全量可供快览；+c 不探——基键无评论）；id 落空→"{kind}:{url}" 回退
+
+# variant 裸参派生——link-get 壳的 zhihu 注入在引擎层的平价（裸
+# --param comments/fast、等号形 --comments=1 漏注入时兜底）：answer 支
+# comments→+c elif fast→+f；p/question 仅 +f；column/zhuanlan 仅 +c。
+# 顺序即优先级；variant 已注（壳正道）一律不覆盖
+[[identity.derive]]
+target = "variant"
+value = "+c"
+when_kind = ["ans"]
+when_truthy = "comments"
+
+[[identity.derive]]
+target = "variant"
+value = "+f"
+when_kind = ["ans", "art", "q"]
+when_truthy = "fast"
+
+[[identity.derive]]
+target = "variant"
+value = "+c"
+when_kind = ["col"]
+when_truthy = "comments"
+
+[params]
+comments = { type = "bool", desc = "--comments 带评论全树；answer/column 目标分发层注 variant=+c" }
+fast = { type = "bool", desc = "--fast 快览臂 tardis/jina；answer//p//question 目标分发层注 variant=+f" }
+
+[[lanes]]
+name = "tardis"
+exec = "lanes/tardis_lane.py"
+needs = { tools = [], env_optional = ["TARDIS_BIN"] }  # lane 自检 tardis bin→rc10；
+                                                     # TARDIS_BIN 透传作第一候选
+egress = { hosts = ["*.zhihu.com", "*.zhimg.com"], proxy = "optional" }
+budget_ms = 120000
+store = "base"                      # tardis 内部键从来是 KIND:ID 无变体——
+                                    # connector 平价：+f 快取也落基键
+# transient 照常上账（lane_fail+lane_note）：zhihu-tardis:432/:440/:467/:480 内部
+# z_lfail 在 LGC_OFF 下已死，须由 engine 复现——driver 旧豁免只是防重复计
+[[lanes]]
+name = "jina"
+exec = "lanes/jina_lane.py"
+needs = { tools = ["curl"] }
+egress = { hosts = ["r.jina.ai"], proxy = "optional" }
+budget_ms = 200000                  # 3 次重试 × 60s + sleep
+store = "base"                      # 全文产物入基键——+f 变体键只收真缩水产物
+[[lanes]]
+name = "firecrawl"
+exec = "lanes/firecrawl_lane.py"
+needs = { env = ["FIRECRAWL_API_KEY"] }  # 无 key→dep_absent 闸（connector lane_dep 平价）
+egress = { hosts = ["api.firecrawl.dev"], proxy = "optional" }
+budget_ms = 120000
+store = "base"                      # 同 jina：全文永远入基键
+[[lanes]]
+name = "scraper"
+exec = "lanes/scraper_lane.py"
+needs = { tools = ["zhihu-scraper"], creds = ["~/.config/zhihu-skill/settings.toml"], env_optional = ["ZHIHU_SETTINGS"] }
+egress = { hosts = ["*.zhihu.com", "*.zhimg.com"], proxy = "optional" }
+budget_ms = 300000                  # 整栏枚举翻页慢
+[[lanes]]
+name = "zhcli"
+exec = "lanes/zhcli_lane.py"
+needs = { tools = [], creds = ["~/.config/zhihu-skill/cookie.txt", "~/.config/zhihu-skill/settings.toml"] }
+egress = { hosts = ["*.zhihu.com", "*.zhimg.com"], proxy = "optional" }
+budget_ms = 300000                  # lane 自解析 zhihu|uvx，缺失→rc10
+[[routes]]
+kinds = ["ans"]
+params = { comments = true }
+lanes = ["scraper"]
+[[routes]]
+kinds = ["ans"]
+params = { fast = true }
+lanes = ["tardis", "jina"]
+[[routes]]
+kinds = ["ans"]
+lanes = ["tardis", "scraper", "jina", "firecrawl"]
+[[routes]]
+kinds = ["art"]
+params = { fast = true }
+lanes = ["tardis", "jina"]
+[[routes]]
+kinds = ["art"]
+lanes = ["zhcli", "tardis", "jina", "firecrawl"]
+[[routes]]
+kinds = ["q"]
+params = { fast = true }
+lanes = ["jina"]
+[[routes]]
+kinds = ["q"]
+lanes = ["zhcli", "jina", "firecrawl"]
+[[routes]]
+kinds = ["col"]
+lanes = ["scraper"]
+[[routes]]
+kinds = ["ppl", "zv", "pin"]
+lanes = ["zhcli"]

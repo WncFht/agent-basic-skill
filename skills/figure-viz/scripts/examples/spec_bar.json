@@ -1,0 +1,38 @@
+{
+    "version": 1,
+    "theme": "accent",
+    "rc": { "font": "serif", "base": 7.6 },
+    "size": { "slot": "half", "height": 1.8 },
+    "data": {
+        "scores": [
+            { "task": "AIME", "method": "ours", "score": 71 },
+            { "task": "AIME", "method": "base", "score": 62 },
+            { "task": "GPQA", "method": "ours", "score": 74 },
+            { "task": "GPQA", "method": "base", "score": 66 },
+            { "task": "LiveC", "method": "ours", "score": 73 },
+            { "task": "LiveC", "method": "base", "score": 64 },
+            { "task": "MATH", "method": "ours", "score": 78 },
+            { "task": "MATH", "method": "base", "score": 69 }
+        ]
+    },
+    "meta": {
+        "ledger": "bar: 每根柱 = 一个 (task, method) 组合的 score；x=task 类别轴，y=score∈[0,100]；by=method 双组 dodge；柱顶标值",
+        "caption": "proposed recipe vs baseline on four benchmarks"
+    },
+    "title": "proposed recipe vs baseline",
+    "xaxis": { "label": "benchmark" },
+    "yaxis": { "label": "score", "lim": { "bottom": 0, "top": 92 } },
+    "grid": "y-only",
+    "series": [
+        {
+            "kind": "bar",
+            "from": "scores",
+            "by": "method",
+            "x": "task",
+            "y": "score",
+            "label": { "ours": "proposed", "base": "baseline" },
+            "labels": { "fmt": "{:.0f}", "fontsize": 5.8, "dy": 1.2 }
+        }
+    ],
+    "legend": { "loc": "upper left", "ncol": 2 }
+}

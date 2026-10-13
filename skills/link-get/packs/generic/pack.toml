@@ -1,0 +1,75 @@
+# generic pack — catch-all article fetcher (monolith wrap of generic-get)
+#   + kind=doc 臂：公网文档 URL → MinerU 云解析（server-side 取 URL——
+#   签名/非 https 文档不落臂：doc-signed 伪 kind 直接 route_miss rc2，
+#   隐私边界见 lanes/mineru_lane.py docstring）
+[pack]
+name = "generic"
+abi = 1
+ns = "link-get"
+kinds = ["article", "doc"]
+label = "其他 http(s)"
+desc = "defuddle → trafilatura → jina → firecrawl；doc 臂 → MinerU 云解析"
+
+[match]
+hosts = ["*"]                  # catch-all: sorted last by the engine
+schemes = ["http", "https"]
+
+[identity]
+keyexpr = "{kind}:{url}"       # article 键仍作 article:<url> ≡ generic-get K；
+                               # doc 键独立 doc:<url>（lgc KIND_SET 外 kinds 走默认 ttl）
+
+[kind_by_url]
+# 顺序即优先级：doc-signed 必须先于 doc——凭据形文档先行判负。
+# 非 https 或 query 带签名类参数（sig|signature|token|expires|key-pair-pk|
+# credential|x-amz-*）的 doc URL → doc-signed（无臂 kind → route_miss rc2：
+# 签名链/明文链绝不喂云；lane 内仍有同则兜底，见 mineru_lane docstring）。
+# 第二支 ext[^\s#]*[?&#] 覆盖非粘连形——文件名埋在 query 参数里
+# （/dl?f=doc.pdf&token=x）同样判负，绝不喂云
+'(?i)(^http://\S*\.(pdf|docx?|pptx?|xlsx?|epub)([/?#]|$)|\.(pdf|docx?|pptx?|xlsx?|epub)[^\s#]*[?&#][^\s#]*(sig|signature|token|expires|key-pair-pk|credential|x-amz-[a-z0-9-]*)=)' = 'doc-signed'
+'(?i)\.(pdf|docx?|pptx?|xlsx?|epub)([/?#]|$)' = 'doc'
+
+[params]
+lang = { type = "str", desc = "--lang：MinerU 文档语言码（默认 ch）" }
+ocr = { type = "bool", desc = "--ocr：扫描件开 OCR" }
+pages = { type = "str", desc = "--pages：页范围 1-10 / 2,4-6（Standard API）" }
+model = { type = "str", desc = "--model：pipeline|vlm|MinerU-HTML（Standard API）" }
+api = { type = "str", desc = "--api：auto|agent|standard 后端选择" }
+format = { type = "str", desc = "--format：docx|html|latex 逗号表（触发 Standard API）" }
+no_formula = { type = "bool", desc = "--no-formula：关公式识别" }
+no_table = { type = "bool", desc = "--no-table：关表格识别" }
+
+[[lanes]]
+name = "generic-get"
+exec = "monolith"
+connector = "../../scripts/connectors/generic-get"
+needs = { tools = ["curl"], env = [], env_optional = ["FIRECRAWL_API_KEY", "LGC_WAIT"], creds = [] }
+egress = { hosts = ["*"], proxy = "optional" }
+budget_ms = 120000
+fail_note = false              # article 臂亦单车道：transient 上账 → lane×key neg →
+                               # 冷却 → dep_absent 死亡螺旋（proven trap，必须关）
+
+[[lanes]]
+name = "mineru"
+exec = "lanes/mineru_lane.py"
+kinds = ["doc"]                # lane 级 kind 闸双保险（engine routes 已先行）
+needs = { tools = [], env_optional = ["MINERU_TOKEN", "MINERU_BIN"] }
+egress = { hosts = ["mineru.net", "*.mineru.net", "*.aliyuncs.com"], proxy = "optional" }
+budget_ms = 600000             # 云端 submit+poll+下载整链（Agent≤20p/Standard≤200p）
+fail_note = false              # doc 臂单车道：transient 上账 → lane×key neg →
+                               # 冷却 → dep_absent 死亡螺旋（proven trap，必须关）
+store_atomic = true            # <stem>.md + images/ 多文件束：整包原子入库
+store_keep = true              # 云解析产物对内容不可变 doc 长效——doc 不在 lgc
+                               # KIND_SET（默认 ttl 仅 1h），不 keep 则每小时重付 API 配额
+
+[[routes]]
+kinds = ["doc"]
+lanes = ["mineru"]
+
+[[routes]]
+kinds = ["article"]            # 显式 article 臂——不可省 kinds 作全兜底：
+                               # 否则 doc-signed 会漏进 generic-get（rc2 失效）
+lanes = ["generic-get"]
+
+[monolith]
+argv = ["{url}", "-o", "{artifact_dir}"]
+flag_params = { refresh = "--refresh" }

@@ -1,0 +1,28 @@
+# setup-toolchain 依赖 — 它给仓库装工具，自身的运行时只需要下面几个
+
+[[dep]]
+name = "git"
+check = "command -v git"
+install = { linux = "sudo pacman -S --needed git", darwin = "brew install git" }
+
+[[dep]]
+name = "node"
+check = "command -v node"
+install = { linux = "sudo pacman -S --needed nodejs npm", darwin = "brew install node" }
+
+[[dep]]
+name = "npm"
+check = "command -v npm"
+install = { linux = "sudo pacman -S --needed nodejs npm", darwin = "brew install node" }
+
+[[dep]]
+name = "python3"
+check = "command -v python3"
+install = { linux = "sudo pacman -S --needed python", darwin = "brew install python@3.13" }
+
+[[dep]]
+name = "pre-commit"
+check = "command -v pre-commit"
+optional = true   # 配仓库钩子时用，缺了现场 pipx/uv 装
+install = "uv tool install pre-commit"
+upgrade = "uv tool upgrade pre-commit"

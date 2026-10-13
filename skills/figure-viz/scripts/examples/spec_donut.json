@@ -1,0 +1,61 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": {
+        "font": "serif",
+        "base": 7.6
+    },
+    "size": {
+        "slot": "half",
+        "height": 1.9
+    },
+    "colors": {
+        "registries": {
+            "stage": {
+                "pretrain": "vblue",
+                "sft": "vteal",
+                "rlvr": "vorange",
+                "eval": "vviolet"
+            }
+        }
+    },
+    "data": {
+        "shares": [
+            {
+                "stage": "pretrain",
+                "share": 46
+            },
+            {
+                "stage": "sft",
+                "share": 22
+            },
+            {
+                "stage": "rlvr",
+                "share": 18
+            },
+            {
+                "stage": "eval",
+                "share": 14
+            }
+        ]
+    },
+    "meta": {
+        "ledger": "donut: 每片 = 一个 stage 的 compute share(%)；x=stage 类别标签，y=share；pct 标片内百分比",
+        "caption": "compute share by pipeline stage"
+    },
+    "title": "compute share by stage",
+    "kind": "donut",
+    "series": [
+        {
+            "kind": "donut",
+            "from": "shares",
+            "x": "stage",
+            "y": "share",
+            "color": "stage",
+            "pct": "%1.0f%%",
+            "pctdistance": 0.78,
+            "startangle": 100,
+            "width": 0.42
+        }
+    ]
+}

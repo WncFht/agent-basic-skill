@@ -1,0 +1,31 @@
+# figure-viz 依赖 — TikZ 轨产出 .tex（xelatex + poppler + ImageMagick）；matplotlib 轨经 uv run --with 临时解析
+
+[[dep]]
+name = "xelatex"
+check = { linux = "command -v xelatex", darwin = "command -v xelatex || test -x /Library/TeX/texbin/xelatex" }
+install = { linux = "sudo pacman -S --needed texlive-xetex texlive-langchinese", darwin = "brew install --cask basictex" } # basictex 已含 xelatex，勿用 mactex-no-gui（与 basictex 冲突）
+
+[[dep]]
+name = "fandol"
+check = { linux = "kpsewhich FandolSong-Regular.otf", darwin = "PATH=/Library/TeX/texbin:$PATH kpsewhich FandolSong-Regular.otf" }
+install = { linux = "sudo pacman -S --needed texlive-langchinese", darwin = "sudo /Library/TeX/texbin/tlmgr install ctex fandol" }
+
+[[dep]]
+name = "poppler"                                                                                                                                                            # pdftoppm (PNG) + pdftocairo (SVG/透明PNG) + pdftotext (readback 词盒)；不用 dvisvgm --pdf（要求 ghostscript<10.01）。dvisvgm 是可选项：走 .xdv 时 pgf 的全部 pdf: specials 被丢（"N PDF specials ignored"），svg 只剩碎片文字——render_tex 已机检这种空壳并回落 pdftocairo 矢量路径，不装 dvisvgm 也直接走该回落
+check = { linux = "command -v pdftoppm && command -v pdftocairo && command -v pdftotext", darwin = "command -v pdftoppm && command -v pdftocairo && command -v pdftotext" }
+install = { linux = "sudo pacman -S --needed poppler", darwin = "brew install poppler" }
+
+[[dep]]
+name = "lualatex"                                                                                                        # 可选：layout_oracle --backend lualatex 的 graphdrawing 分层；缺失时 auto 回退内建 simple
+check = { linux = "command -v lualatex", darwin = "command -v lualatex || test -x /Library/TeX/texbin/lualatex" }
+install = { linux = "sudo pacman -S --needed texlive-luatex", darwin = "sudo /Library/TeX/texbin/tlmgr install luatex" }
+
+[[dep]]
+name = "imagemagick"                                                                             # 透明 PNG：magick -transparent white
+check = { linux = "command -v magick", darwin = "command -v magick" }
+install = { linux = "sudo pacman -S --needed imagemagick", darwin = "brew install imagemagick" }
+
+[[dep]]
+name = "uv"                                                                                                                         # matplotlib 轨：uv run --with matplotlib python fig.py
+check = { linux = "command -v uv", darwin = "command -v uv" }
+install = { linux = "curl -LsSf https://astral.sh/uv/install.sh | sh", darwin = "curl -LsSf https://astral.sh/uv/install.sh | sh" }

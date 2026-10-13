@@ -1,0 +1,47 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": { "font": "serif", "base": 7.6 },
+    "size": [2.7, 2.5],
+    "colors": {
+        "registries": {
+            "model": { "method": "vteal", "baseline": "vgray" }
+        }
+    },
+    "data": {
+        "prof": [
+            { "model": "method", "dim": "math", "score": 0.82 },
+            { "model": "method", "dim": "code", "score": 0.74 },
+            { "model": "method", "dim": "reason", "score": 0.79 },
+            { "model": "method", "dim": "knowledge", "score": 0.66 },
+            { "model": "method", "dim": "long-ctx", "score": 0.71 },
+            { "model": "baseline", "dim": "math", "score": 0.7 },
+            { "model": "baseline", "dim": "code", "score": 0.68 },
+            { "model": "baseline", "dim": "reason", "score": 0.62 },
+            { "model": "baseline", "dim": "knowledge", "score": 0.63 },
+            { "model": "baseline", "dim": "long-ctx", "score": 0.58 }
+        ]
+    },
+    "meta": {
+        "ledger": "radar: 每臂 = model 的五维 score profile；dim=能力轴(角度)，y=score∈[0,1] 半径",
+        "caption": "capability profile: proposed vs baseline"
+    },
+    "kind": "radar",
+    "dims": ["math", "code", "reason", "knowledge", "long-ctx"],
+    "title": "capability profile",
+    "yaxis": { "lim": [0, 1], "ticks": [0.25, 0.5, 0.75, 1.0] },
+    "series": [
+        {
+            "kind": "line",
+            "from": "prof",
+            "by": "model",
+            "x": "dim",
+            "y": "score",
+            "color": "model",
+            "lw": 1.4,
+            "fill": 0.12,
+            "label": { "method": "proposed", "baseline": "baseline" }
+        }
+    ],
+    "legend": { "where": "below", "ncol": 2 }
+}

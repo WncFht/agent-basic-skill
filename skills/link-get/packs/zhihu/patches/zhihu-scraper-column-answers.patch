@@ -1,0 +1,51 @@
+diff --git a/zhihu_scraper/application.py b/zhihu_scraper/application.py
+index 01e8247..cd5f167 100644
+--- a/zhihu_scraper/application.py
++++ b/zhihu_scraper/application.py
+@@ -381,9 +381,14 @@ class ArchiveWorkflow:
+                     target,
+                     page_size=self._settings.page_size,
+                 ),
+-                validate=_validate_article_payload,
++                validate=_validate_column_item_payload,
+             )
+             for payload in article_payloads:
++                if payload.get("type") == "answer":
++                    self._save_batch_item(
++                        self._with_answer_comments(normalize_answer(payload))
++                    )
++                    continue
+                 article = normalize_article(payload)
+                 if all(item.token != origin.token for item in article.columns):
+                     article = replace(
+@@ -572,3 +577,14 @@ def _validate_answer_payload(
+     answer = normalize_answer(payload, source_url=source_url)
+     if not answer.blocks:
+         raise NormalizationError("answer payload is missing full content")
++
++
++def _validate_column_item_payload(
++    payload: Mapping[str, object],
++    *,
++    source_url: str | None = None,
++) -> None:
++    if payload.get("type") == "answer":
++        _validate_answer_payload(payload, source_url=source_url)
++    else:
++        _validate_article_payload(payload, source_url=source_url)
+diff --git a/zhihu_scraper/archive.py b/zhihu_scraper/archive.py
+index a642332..a174c1d 100644
+--- a/zhihu_scraper/archive.py
++++ b/zhihu_scraper/archive.py
+@@ -493,7 +493,10 @@ class LocalArchiveBatch:
+     def write_item(self, item: Article | Answer) -> ArchiveReceipt:
+         if self._closed:
+             raise RuntimeError("batch archive is closed")
+-        if isinstance(self._target, ColumnArchive) != isinstance(item, Article):
++        if isinstance(self._target, ColumnArchive):
++            if not isinstance(item, (Article, Answer)):
++                raise TypeError("column archive items must be articles or answers")
++        elif isinstance(item, Article):
+             raise TypeError("collection item type does not match its archive")
+         if item.id in self._receipts:
+             return self._receipts[item.id]

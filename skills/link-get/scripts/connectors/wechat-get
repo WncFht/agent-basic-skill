@@ -1,0 +1,73 @@
+#!/bin/bash
+# wechat-get —— 微信公众号文章 → md。
+#
+#   wechat-get <url> [-o DIR]
+#
+# 车道：defuddle → tvly-hikari（tavily）→ firecrawl（烧 credit 殿后）。
+# lgc-needs: get put neg lane key into wait
+set -eo pipefail
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+source "$(cd -P "$(dirname "$_s")" && pwd)/_common.sh"
+unset _s _d
+
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+OUT=""
+TARGET=""
+lg_args "$@"
+_guard_url "$TARGET" || exit 2 # SSRF 闸：字面私网/回环/伪 host 拒于 probe/车道前
+
+K="wechat:$TARGET"
+# shellcheck disable=SC2034 # _common.sh 车道函数记账入参
+ZK="$K"
+H="$(z_key link-get "$K")"
+F="$OUT/wechat--$H.md" # 确定性命名（__biz+mid+idx 同键同名）
+
+z_probe link-get "$K" --into "$OUT" --wait "${LGC_WAIT:-300}"
+case "$ZHIT" in
+hit)
+  printf '%s\n' "$ZPATHS" | while IFS= read -r _p; do
+    echo "==> 已存 $_p（cache）"
+  done
+  exit 0
+  ;;
+neg)
+  case "$ZNEG" in
+  deleted) exit 4 ;;
+  notrack) exit 3 ;;
+  *) exit 5 ;;
+  esac
+  ;;
+esac
+
+for _lane in defuddle tvly firecrawl; do
+  z_lane link-get "$_lane" "$K" || continue # lane-neg/breaker → 跳
+  _rc=0
+  "$_lane" "$TARGET" "$F" || _rc=$?
+  case "$_rc" in
+  0)
+    z_store link-get "$K" --lane "$_lane" --files "$F"
+    if [ "$ZDEL" = 1 ]; then
+      z_note link-get "$K" deleted
+      echo "内容命中删除签名（产物已在 -o）：$TARGET" >&2
+      exit 4
+    fi
+    z_lhit link-get "$_lane"
+    echo "==> 已存 $F（$_lane）"
+    exit 0
+    ;;
+  4)
+    z_note link-get "$K" deleted # rc4 短路
+    exit 4
+    ;;
+  *) continue ;;
+  esac
+done
+echo "微信三车道全挂（defuddle/tavily/firecrawl）" >&2
+# neg 政策（§3.4 transient）：车道已各自 z_lfail 记 lane 账，不写内容级墓碑——
+# 内容键只在 permanent/notcovered（deleted 签名/rc4）时落 neg。
+exit 5

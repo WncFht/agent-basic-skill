@@ -1,0 +1,20 @@
+title = "REPO-NAME"
+
+[extend]
+useDefault = true
+
+# 历史已提交的秘密按精确值放行（regexTarget=line 匹配整行，值不变即豁免）。
+# 只放已经入库的既定事实；新值仍会命中规则。不要用 paths 整文件放行。
+# [allowlist]
+# regexTarget = "line"
+# regexes = ['''password: "EXACT-LEGACY-VALUE"''']
+
+# 自有凭据格式：真实值在任意已入库文件都拦，占位符放行。
+# 例：面板账密只应存在于 gitignored 的 xxx.env；example 文件的占位符豁免。
+# [[rules]]
+# id = "my-credential"
+# description = "My credential (live value; placeholder allowed)"
+# regex = '''MY_CREDENTIAL=[^\s#]+'''
+# [rules.allowlist]
+# regexTarget = "line"
+# regexes = ['''your-placeholder-''']

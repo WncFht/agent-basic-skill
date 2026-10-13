@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Search for academic papers using the arXiv API."""
+
+import argparse
+import os
+import re
+import tempfile
+import time
+import urllib.parse
+import xml.etree.ElementTree as ET
+from datetime import date
+
+from _http_runtime import create_session, request
+
+# arXiv asks for no more than ~1 request every 3s. We enforce a stricter 4s floor and,
+# crucially, do it ACROSS processes: separate paper-search invocations may overlap, so an
+# in-process lock would not help. We serialize on a lockfile in the system temp dir and hold
+# the exclusive lock across the sleep, so concurrent processes queue and each request is
+# spaced >= MIN_INTERVAL after the previous one actually fired. Override with ARXIV_MIN_INTERVAL.
+_MIN_INTERVAL = float(os.environ.get("ARXIV_MIN_INTERVAL", "4.0"))
+_THROTTLE_FILE = os.path.join(tempfile.gettempdir(), "arxiv_search_throttle.lock")
+
+
+def _throttle() -> None:
+    """Block until >= _MIN_INTERVAL has elapsed since the last arXiv request (cross-process).
+
+    Uses fcntl.flock for an exclusive, process-serializing lock; on platforms without fcntl
+    (non-POSIX) it degrades to a plain per-process sleep floor."""
+    try:
+        import fcntl
+    except ImportError:
+        time.sleep(_MIN_INTERVAL)
+        return
+
+    fd = os.open(_THROTTLE_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)  # serializes all arXiv callers on this machine
+        raw = os.read(fd, 64).decode("utf-8").strip()
+        try:
+            last = float(raw) if raw else 0.0
+        except ValueError:
+            last = 0.0
+        wait = _MIN_INTERVAL - (time.time() - last)
+        if wait > 0:
+            time.sleep(wait)
+        # Stamp the moment this request is about to fire, so the next caller spaces from here.
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)
+        os.write(fd, str(time.time()).encode("utf-8"))
+    finally:
+        os.close(fd)  # releasing the fd also releases the flock
+
+
+def search_papers_by_arxiv(
+    query: str,
+    start_year: int,
+    end_year: int,
+    max_results: int = 10,
+    source_options: dict | None = None,
+) -> list[dict]:
+    """Search for papers on arXiv.
+
+    Args:
+        query: Search query string.
+        start_year: Filter papers published from this year.
+        end_year: Filter papers published up to this year.
+        max_results: Maximum number of papers to return.
+
+    Returns:
+        List of paper dictionaries.
+    """
+    if max_results <= 0:
+        return []
+    ARXIV_API = "https://export.arxiv.org/api/query"
+
+    query_mode = str((source_options or {}).get("query_mode", "balanced")).lower()
+    if query_mode not in {"balanced", "strict"}:
+        raise ValueError("arXiv query_mode must be 'balanced' or 'strict'")
+    date_filter = f"submittedDate:[{start_year}01010000 TO {end_year}12312359]"
+    params = {
+        "search_query": f"({_query_expression(query, query_mode)}) AND {date_filter}",
+        "sortBy": "relevance",
+        # "sortBy": "submittedDate",
+        "sortOrder": "descending",
+        "max_results": str(max_results),
+    }
+    url = ARXIV_API + "?" + urllib.parse.urlencode(params)
+    session = create_session("PaperSearch/1.0")
+    response = request(
+        session,
+        "GET",
+        url,
+        source="arxiv",
+        before_attempt=_throttle,
+    )
+    response.raise_for_status()
+    xml_data = response.content.decode("utf-8")
+    return _parse_arxiv_xml(xml_data, start_year, end_year)
+
+
+def _query_expression(query: str, mode: str = "balanced") -> str:
+    """Build a safe strict or recall-oriented arXiv query expression."""
+    tokens = re.findall(r"[\w-]+", query, flags=re.UNICODE)
+    if not tokens:
+        raise ValueError("arXiv query must contain at least one searchable token")
+    clauses = [f'all:"{token}"' for token in tokens]
+    if mode == "strict" or len(clauses) <= 3:
+        return " AND ".join(clauses)
+    return " AND ".join([*clauses[:2], f"({' OR '.join(clauses[2:])})"])
+
+
+def _parse_arxiv_xml(xml_data: str, start_year: int, end_year: int) -> list[dict]:
+    """Map an arXiv Atom response to the stable public paper schema."""
+    ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+    root = ET.fromstring(xml_data)
+    papers: list[dict] = []
+
+    for entry in root.findall("atom:entry", ATOM_NS):
+        pub_node = entry.find("atom:published", ATOM_NS)
+        if pub_node is None or not pub_node.text:
+            continue
+        try:
+            pub = date.fromisoformat(pub_node.text[:10])
+        except ValueError:
+            continue
+        if not (start_year <= pub.year <= end_year):
+            continue
+
+        title_node = entry.find("atom:title", ATOM_NS)
+        summary_node = entry.find("atom:summary", ATOM_NS)
+        id_node = entry.find("atom:id", ATOM_NS)
+
+        title = (title_node.text or "").strip() if title_node is not None else ""
+        abstract = (summary_node.text or "").strip() if summary_node is not None else ""
+        paper_url = (id_node.text or "").strip() if id_node is not None else ""
+        authors = [
+            (name.text or "").strip()
+            for a in entry.findall("atom:author", ATOM_NS)
+            if (name := a.find("atom:name", ATOM_NS)) is not None
+        ]
+
+        # Stable ids for cross-source dedup: arXiv id parsed from the atom id URL
+        # (strip the version suffix), DOI from the arxiv namespace when authors set it.
+        m = re.search(r"arxiv\.org/abs/([^\s]+?)(v\d+)?$", paper_url)
+        arxiv_id = m.group(1) if m else None
+        doi_node = entry.find("{http://arxiv.org/schemas/atom}doi")
+        doi = (doi_node.text or "").strip() if doi_node is not None else None
+
+        papers.append(
+            {
+                "title": title,
+                "authors": authors,
+                "year": pub.year,
+                "abstract": abstract,
+                "url": paper_url,
+                "venue": "arXiv",
+                "citation_count": None,
+                "citation_source": None,
+                "publication_date": pub.isoformat(),
+                "publication_status": "preprint",
+                "status_source": "arxiv",
+                "source": "arxiv",
+                "doi": doi,
+                "arxiv_id": arxiv_id,
+            }
+        )
+
+    return papers
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Search papers on arXiv")
+    parser.add_argument("--query", required=True, help="Search query")
+    parser.add_argument("--start-year", type=int, required=True, help="Start year")
+    parser.add_argument("--end-year", type=int, required=True, help="End year")
+    parser.add_argument(
+        "--max-papers", type=int, default=10, help="Max number of papers (default: 10)"
+    )
+    args = parser.parse_args()
+
+    papers = search_papers_by_arxiv(
+        args.query, args.start_year, args.end_year, args.max_papers
+    )
+    print(papers[0] if papers else "No papers found.")
+
+# python search_papers_by_arxiv.py --query "data efficacy for LM training" --start-year 2024 --end-year 2026 --max-papers 20

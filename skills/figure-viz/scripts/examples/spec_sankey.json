@@ -1,0 +1,84 @@
+{
+    "version": 1,
+    "theme": "paper",
+    "rc": {
+        "font": "serif",
+        "base": 7.6
+    },
+    "size": {
+        "slot": "half",
+        "height": 1.9
+    },
+    "meta": {
+        "ledger": "sankey: flows 字面行（source/target/value）内嵌、不挂 dataset；节点按端点推导+字面 nodes 覆盖 label；heads 按 stage 序给列头；兼有出入流的节点强制守恒",
+        "caption": "corpus filtering and split"
+    },
+    "title": "data pipeline",
+    "series": [
+        {
+            "kind": "sankey",
+            "flows": [
+                {
+                    "source": "corpus",
+                    "target": "filtered",
+                    "value": 920
+                },
+                {
+                    "source": "corpus",
+                    "target": "rejected",
+                    "value": 80
+                },
+                {
+                    "source": "filtered",
+                    "target": "train",
+                    "value": 736
+                },
+                {
+                    "source": "filtered",
+                    "target": "dev",
+                    "value": 92
+                },
+                {
+                    "source": "filtered",
+                    "target": "test",
+                    "value": 92
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "corpus",
+                    "label": "raw corpus"
+                },
+                {
+                    "id": "filtered",
+                    "label": "filtered"
+                },
+                {
+                    "id": "rejected",
+                    "label": "rejected"
+                },
+                {
+                    "id": "train",
+                    "label": "train"
+                },
+                {
+                    "id": "dev",
+                    "label": "dev"
+                },
+                {
+                    "id": "test",
+                    "label": "test"
+                }
+            ],
+            "heads": ["source", "filter", "split"],
+            "labels": {
+                "template": "{l} {v}",
+                "vfmt": "{:g}",
+                "fontsize": 5.8
+            }
+        }
+    ],
+    "output": {
+        "path": "spec_sankey.png"
+    }
+}

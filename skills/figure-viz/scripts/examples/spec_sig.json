@@ -1,0 +1,87 @@
+{
+    "version": 1,
+    "theme": "accent",
+    "rc": {
+        "font": "serif",
+        "base": 7.6
+    },
+    "size": {
+        "slot": "half",
+        "height": 1.9
+    },
+    "data": {
+        "d": [
+            {
+                "m": "base",
+                "s": 62
+            },
+            {
+                "m": "+data",
+                "s": 66
+            },
+            {
+                "m": "+align",
+                "s": 69
+            },
+            {
+                "m": "ours",
+                "s": 74
+            }
+        ],
+        "sig": [
+            {
+                "a": "base",
+                "b": "ours",
+                "y": 80,
+                "p": 0.003
+            },
+            {
+                "a": "+data",
+                "b": "ours",
+                "y": 84.5,
+                "p": 0.02
+            },
+            {
+                "a": "+align",
+                "b": "ours",
+                "y": 89,
+                "p": 0.4
+            }
+        ]
+    },
+    "meta": {
+        "ledger": "sig: 显著性 Π 括号叠在 bar 上；a/b 按 bar 类目序解析、y=梁高（数据单位）；p 自动映射星号 p<.001/*** p<.01/** p<.05/* 否则 ns；ylim 顶沿留余量防 sig-outside-axes",
+        "caption": "ablation scores with significance brackets"
+    },
+    "title": "ablation vs ours",
+    "xaxis": {
+        "label": "recipe"
+    },
+    "yaxis": {
+        "label": "score",
+        "lim": [0, 100]
+    },
+    "grid": "y-only",
+    "series": [
+        {
+            "kind": "bar",
+            "from": "d",
+            "x": "m",
+            "y": "s",
+            "width": 0.55,
+            "color": "vblue",
+            "labels": {
+                "fmt": "{:.0f}",
+                "fontsize": 5.8,
+                "dy": 1.2
+            }
+        },
+        {
+            "kind": "sig",
+            "from": "sig"
+        }
+    ],
+    "output": {
+        "path": "spec_sig.png"
+    }
+}

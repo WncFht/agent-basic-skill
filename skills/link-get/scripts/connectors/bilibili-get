@@ -1,0 +1,337 @@
+#!/bin/bash
+# bilibili-get —— B 站链接 → 字幕/动态文本。
+#
+#   bilibili-get <url> [-o DIR]
+#
+# /video 与 b23.tv 短链 → yt-dlp 元数据 + 字幕（排除 danmaku 伪轨）→ BBDown AI 字幕兜底；
+# /opus 与 t.bilibili.com 动态 → polymer web-dynamic API → md。
+# 无字幕轨 → 退出码 3（交给 media-get + asr）。
+# lgc-needs: get put neg cat lane key into wait
+set -eo pipefail
+_s="$0"
+while [ -h "$_s" ]; do
+  _d="$(cd -P "$(dirname "$_s")" && pwd)"
+  _s="$(readlink "$_s")"
+  case "$_s" in /*) ;; *) _s="$_d/$_s" ;; esac
+done
+source "$(cd -P "$(dirname "$_s")" && pwd)/_common.sh"
+unset _s _d
+
+usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d'; }
+
+# _bili_urlsplit <url> → 全局 _BHOST（host 小写归一）/_BPATH（authority 后段），
+# rc1=非 http(s) 或空 host。b23 短链识别/白名单与 opus 分流共用同一解析——
+# authority 锚定，杜绝 'evil.com/?u=bilibili.com' 式子串撞车。
+_bili_urlsplit() {
+  local url="$1" rest auth hostpath
+  local LC_ALL=C
+  case "$url" in
+  http://* | https://*) ;;
+  *) return 1 ;;
+  esac
+  rest="${url#*://}"
+  auth="${rest%%[/?#]*}"
+  hostpath="${auth##*@}" # userinfo 障眼：最末 @ 之后才是真 host
+  # shellcheck disable=SC2034 # _BHOST/_BPATH 是回传调用方的出参
+  _BHOST="$(printf '%s' "${hostpath%%:*}" | tr 'A-Z' 'a-z')"
+  while [ "${_BHOST%.}" != "$_BHOST" ]; do _BHOST="${_BHOST%.}"; done # FQDN 尾点归一
+  # shellcheck disable=SC2034
+  _BPATH="${rest#"$auth"}"
+  [ -n "$_BHOST" ]
+}
+
+# _bili_target_ok <url> → rc0=可采纳的 bilibili 目标（对齐 media-get 同名函数）。
+# authority 锚定白名单，非子串：host ∈ bilibili.com|*.bilibili.com；
+# t.bilibili.com 全路径放行，其余域要求 path ∈ /video/|/opus/|/bangumi/。
+# 值缓存可被写任意串——写入与读取两端都必须重过此闸。
+_bili_target_ok() {
+  _bili_urlsplit "$1" || return 1
+  case "$_BHOST" in
+  bilibili.com | *.bilibili.com) ;;
+  *) return 1 ;;
+  esac
+  case "$_BHOST" in
+  t.bilibili.com | *.t.bilibili.com) return 0 ;;
+  esac
+  case "$_BPATH" in
+  /video/* | /opus/* | /bangumi/*) return 0 ;;
+  esac
+  return 1
+}
+
+OUT=""
+TARGET=""
+lg_args "$@"
+_guard_url "$TARGET" || exit 2 # SSRF 闸：字面私网/回环/伪 host 拒于 probe/车道前
+
+# 扫掉历史 SIGKILL 遗留的 staging（>1h；可能含 BBDown.data 凭据）——对齐 media-get
+find "$OUT" -maxdepth 1 -type d -name '.lgc-stage-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+# b23.tv 短链先解出真身（30d value 缓存）。host 锚定识别短链域；
+# curl -sIL 的逐跳重定向在 bash 侧无廉价逐跳过闸手段——只 --max-redirs 限跳数
+# 并复检终态 URL（逐跳闸归 engine 层，对齐 media-get _CheckedRedirect 分工）；
+# 采纳前过 _guard_url + _bili_target_ok 双闸：curl 解析结果与 lgc-cat 缓存值同审。
+_is_b23=0
+if _bili_urlsplit "$TARGET"; then
+  case "$_BHOST" in
+  b23.tv | *.b23.tv) _is_b23=1 ;;
+  esac
+fi
+if [ "$_is_b23" = 1 ]; then
+  _code="$(printf '%s' "$_BPATH" | grep -oE '^/[A-Za-z0-9_-]+' | head -1 || true)"
+  _code="${_code#/}"
+  _rurl=""
+  if [ -n "$_code" ]; then
+    z_val link-get "bili:b23:$_code"
+    [ -n "$ZVAL" ] && _rurl="$ZVAL"
+  fi
+  if [ -z "$_rurl" ]; then
+    if ! _rurl="$(curl -sIL --max-redirs 5 -o /dev/null -w '%{url_effective}' --max-time 15 "$TARGET")"; then
+      echo "b23.tv 短链解析失败（curl 瞬时故障）：$TARGET" >&2
+      exit 5
+    fi
+    # 写闸不弱于读闸：guard+白名单双过才占 30d 键位——否则「白名单过但
+    # SSRF 拒」的毒值落缓存，后续每跑必命中又必拒，短链码永久焊死
+    if _guard_url "$_rurl" && _bili_target_ok "$_rurl" && [ -n "$_code" ]; then
+      z_vput link-get "bili:b23:$_code" "$_rurl"
+    fi
+  else
+    echo "==> b23.tv 缓存命中" >&2
+  fi
+  if [ -n "$_rurl" ]; then
+    _guard_url "$_rurl" || exit 2
+    _bili_target_ok "$_rurl" || {
+      echo "b23.tv 解析目标非 bilibili 域白名单，拒收：$_rurl" >&2
+      exit 2
+    }
+    TARGET="$_rurl"
+    echo "==> b23.tv 解析为 $TARGET" >&2
+  fi
+fi
+
+# opus 分流锚定 authority/path（非子串）：t.bilibili.com 主机，或 bilibili 域
+# 且 path 以 /opus/ 起头——'?foo=opus'/'?u=t.bilibili.com' 式 query 撞车不误入。
+_is_opus=0
+if _bili_urlsplit "$TARGET"; then
+  case "$_BHOST" in
+  t.bilibili.com | *.t.bilibili.com) _is_opus=1 ;;
+  bilibili.com | *.bilibili.com)
+    case "$_BPATH" in /opus/*) _is_opus=1 ;; esac
+    ;;
+  esac
+fi
+if [ "$_is_opus" = 1 ]; then
+  # DID 从 path 段提取（query/fragment 的数字不算）——'?x=1234567890123' 不得抢答
+  DID="$(printf '%s' "$_BPATH" | grep -oE '[0-9]{10,}' | head -1 || true)"
+  [ -z "$DID" ] && {
+    echo "解不出动态 id：$TARGET" >&2
+    exit 2
+  }
+  KO="bili:opus:$DID"
+  # shellcheck disable=SC2034 # _common.sh 车道函数记账入参
+  ZK="$KO"
+  z_probe link-get "$KO" --into "$OUT" --wait "${LGC_WAIT:-300}"
+  case "$ZHIT" in
+  hit)
+    printf '%s\n' "$ZPATHS" | while IFS= read -r _p; do
+      echo "==> 已存 $_p（cache）"
+    done
+    exit 0
+    ;;
+  neg)
+    case "$ZNEG" in
+    deleted) exit 4 ;;
+    notrack) exit 3 ;;
+    *) exit 5 ;;
+    esac
+    ;;
+  esac
+  _rc=1
+  if z_lane link-get bili-api "$KO"; then
+    _rc=0
+    curl -s --max-time 20 \
+      "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=$DID" |
+      python3 -c "
+import sys, json, os
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if d.get('code') != 0:
+    sys.exit(1)
+item = d.get('data', {}).get('item', {})
+mods = item.get('modules', {})
+title = mods.get('module_dynamic', {}).get('major', {}).get('opus', {}).get('title') or item.get('basic', {}).get('comment_id_str', '')
+text = mods.get('module_dynamic', {}).get('major', {}).get('opus', {}).get('summary', {}).get('text', '')
+if not text.strip():
+    sys.exit(1)
+p = os.path.join(sys.argv[1], f'opus-{sys.argv[2]}.md')
+open(p, 'w').write(f'# {title}\n\n{text}\n')
+print(f'==> 已存 {p}')
+" "$OUT" "$DID" || _rc=$?
+    [ "$_rc" -ne 0 ] && z_lfail link-get bili-api "$KO"
+  else
+    # 车道被 gate（lane-neg/breaker 冷却）：非内容失败，不落内容级 neg
+    echo "bili-api 车道冷却中，跳过 opus 抓取" >&2
+    exit 5
+  fi
+  if [ "$_rc" -eq 0 ]; then
+    z_store link-get "$KO" --lane bili-api --files "$OUT/opus-$DID.md"
+    if [ "$ZDEL" = 1 ]; then
+      z_note link-get "$KO" deleted
+      exit 4
+    fi
+    z_lhit link-get bili-api
+    exit 0
+  fi
+  # transient 失败只记车道账（上面 z_lfail：breaker++ + lane×key neg），不写内容墓碑
+  exit 5
+fi
+
+BVID="$(printf '%s' "$TARGET" | grep -oE 'BV[A-Za-z0-9]+' | head -1 || true)"
+PART="$(printf '%s' "$TARGET" | grep -oE '[?&]p=[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+[ -z "$PART" ] && PART=1
+# D3 守卫：BVID 解不出 → 整个 bili:* 族跳过缓存读写（空键 z_* 全 no-op）
+KSUB=""
+[ -n "$BVID" ] && KSUB="bili:subs:$BVID:p$PART"
+# shellcheck disable=SC2034 # _common.sh 车道函数记账入参
+ZK="$KSUB"
+
+z_probe link-get "$KSUB" --into "$OUT" --wait "${LGC_WAIT:-300}"
+case "$ZHIT" in
+hit)
+  printf '%s\n' "$ZPATHS" | while IFS= read -r _p; do
+    echo "==> 已存 $_p（cache）"
+  done
+  exit 0
+  ;;
+neg)
+  case "$ZNEG" in
+  deleted) exit 4 ;;
+  notrack)
+    echo "无字幕轨（缓存判定）——走视频管线（link-get --media / asr）" >&2
+    exit 3
+    ;;
+  *) exit 5 ;;
+  esac
+  ;;
+esac
+
+TITLE="$(yt_meta "$TARGET" "${BVID:-bili}" bili:meta)" || {
+  echo "元数据两次拉取均失败，无法取证字幕轨：$TARGET" >&2
+  exit 5
+}
+SLUG="$(sanitize "$TITLE")"
+[ -z "$SLUG" ] && SLUG="bilibili-${BVID:-x}"
+
+_lane=""
+_bbdown_tried="" # transient 记账用：BBDown 真跑过才计 lane-fail（dep-absent 不计）
+set --
+_st="$OUT/.lgc-stage-$$" # per-run staging：yt-dlp 分p全量产物按名收编，防跨p串味
+# mkdir 前无条件预清：同 PID 新鲜 SIGKILL 孤儿（<1h 清扫网漏）/撞名普通文件/
+# 软链逃逸——陈旧产物不得进收编（对齐 media-get:763 的 rmtree→mkdir 序）
+rm -rf "$_st" || true
+mkdir -p "$_st" 2>/dev/null || true
+if [ ! -d "$_st" ] || [ -L "$_st" ]; then
+  echo "staging 目录不可用（非目录或软链）：$_st" >&2
+  exit 5
+fi
+yt_subs "$TARGET" 'all,-danmaku' "$BVID" "$_st" || true # rc 不信：以收编结果为准
+for _s in "$_st"/*.srt; do
+  [ -f "$_s" ] || continue
+  _b="$(basename "$_s")"
+  _want=0
+  case "$_b" in
+  *--"$BVID"_p"$PART".*.srt) _want=1 ;;
+  *--"$BVID".*.srt | *--"$BVID"_p1.*.srt) [ "$PART" -eq 1 ] && _want=1 ;;
+  esac
+  mv "$_s" "$OUT/$_b" || continue
+  [ "$_want" = 1 ] && set -- "$@" "$OUT/$_b"
+done
+[ $# -gt 0 ] && _lane="yt-dlp"
+if [ -z "$_lane" ]; then
+  echo "yt-dlp 无字幕，BBDown 兜底（AI 字幕免登录）" >&2
+  if command -v BBDown >/dev/null 2>&1; then
+    # BBDown 把含登录态的 BBDown.data 写进 work-dir——放 0700 固定缓存目录，
+    # 不落 $OUT staging（对齐 media-get：SIGKILL 也不把凭证留在用户产物区）
+    _bb="$HOME/.cache/link-get/tmp/bbdown-$$"
+    # PID 复用会撞上 SIGKILL 孤儿目录：预清防陈旧 .srt/BBDown.data 混进本轮收编
+    rm -rf "$_bb" || true
+    # -d/-L 校验与 _st 同款：rm -rf 失手于软链时 mkdir 顺链建目录、chmod 跟链——
+    # BBDown.data 凭据与收编 srt 会落进链接目标
+    if mkdir -p "$_bb" 2>/dev/null && chmod 700 "$_bb" 2>/dev/null && [ -d "$_bb" ] && [ ! -L "$_bb" ]; then
+      # 复用已有登录态（CWD/家目录的 BBDown.data 拷入），缺席则匿名跑
+      for _d in ./BBDown.data "$HOME/BBDown.data"; do
+        [ -f "$_d" ] && [ ! -f "$_bb/BBDown.data" ] && cp "$_d" "$_bb/" 2>/dev/null || true
+      done
+      _bbd=("$TARGET" --sub-only --skip-ai false --work-dir "$_bb")
+      if [ ! -f "$_bb/BBDown.data" ]; then
+        # 无登录态文件 → BILI_* env 拼 -c cookie 兜底（对齐 media-get env-cookie）
+        _ck=""
+        [ -n "${BILI_SESSDATA:-}" ] && _ck="SESSDATA=$BILI_SESSDATA"
+        [ -n "${BILI_JCT:-}" ] && _ck="${_ck:+$_ck;}bili_jct=$BILI_JCT"
+        [ -n "${BILI_BUVID3:-}" ] && _ck="${_ck:+$_ck;}buvid3=$BILI_BUVID3"
+        [ -n "$_ck" ] && _bbd+=(-c "$_ck")
+      fi
+      # GNU timeout 是 coreutils 依赖（stock macOS 无）：缺席降级裸跑——
+      # 绝不能让 timeout rc127 被 || true 吞成「BBDown 跑过但零产出」
+      if command -v timeout >/dev/null 2>&1; then
+        (cd "$_bb" && timeout 180 BBDown "${_bbd[@]}" >/dev/null 2>&1) || true
+      else
+        (cd "$_bb" && BBDown "${_bbd[@]}" >/dev/null 2>&1) || true
+      fi
+      _bbdown_tried=1
+      while IFS= read -r _s; do
+        _b="$(basename "$_s")"
+        mv "$_s" "$OUT/$_b" || continue
+        set -- "$@" "$OUT/$_b"
+      done < <(find "$_bb" -type f -name '*.srt' 2>/dev/null)
+      rm -rf "$_bb" || true
+      [ $# -gt 0 ] && _lane="bbdown"
+    fi
+  fi
+fi
+rm -rf "$_st" || true
+
+if [ -z "$_lane" ]; then
+  # 双挂分流：meta 证零轨 且 BBDown 兜底真跑过 → notrack(exit3)；
+  # meta 缺失/有轨未取到/BBDown dep-absent 未取证 = transient
+  # → 只记 lane 账（z_lfail）exit5，不写内容级墓碑（dep-absent 永不落 notrack）；
+  # BVID 解不出 → 无法取证，保持 exit3（且全族不缓存）
+  if [ -n "$BVID" ]; then
+    if [ -n "$_bbdown_tried" ] && [ -s "$OUT/$BVID.meta.json" ] && python3 -c "
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+    subs = d.get('subtitles') or {}
+    auto = d.get('automatic_captions') or {}
+except Exception:
+    sys.exit(1)
+sys.exit(0 if not subs and not auto else 1)
+" "$OUT/$BVID.meta.json"; then
+      echo "无字幕轨——走视频管线（link-get --media / asr）" >&2
+      z_note link-get "$KSUB" notrack
+      exit 3
+    fi
+    echo "字幕车道全挂（meta 缺失或有轨未取到）：$TARGET" >&2
+    z_lfail link-get yt-dlp "$KSUB"
+    [ -n "$_bbdown_tried" ] && z_lfail link-get bbdown "$KSUB"
+    exit 5
+  fi
+  echo "无字幕轨——走视频管线（link-get --media / asr）" >&2
+  exit 3
+fi
+
+STUB="$OUT/$SLUG--$BVID.md"
+printf '# %s\n\nsource: %s\nbvid: %s\n字幕见同目录 .srt\n' "$TITLE" "$TARGET" "$BVID" >"$STUB"
+echo "==> 已存 $STUB"
+set -- "$@" "$STUB"
+_mj="$OUT/${BVID:-bili}.meta.json"
+[ -s "$_mj" ] && set -- "$@" "$_mj"
+z_store link-get "$KSUB" --lane "$_lane" --files "$@"
+if [ "$ZDEL" = 1 ]; then
+  z_note link-get "$KSUB" deleted
+  exit 4
+fi
+z_lhit link-get "$_lane"
+exit 0

@@ -1,0 +1,1019 @@
+#!/usr/bin/env python3
+"""media-get —— 视频素材一键获取：元数据 -> 封面 -> 最佳可下载视频 -> CC 字幕 -> audio.wav。
+
+用法：
+  media-get "<URL>" [-o DIR] [--max-height 1080] [--langs "zh-Hans,zh-CN,zh,ai-zh,en"]
+  media-get "<URL>" [--refresh|--no-cache|--cache-ttl SEC]
+  link-get --media "<URL>" -o DIR          # 等价入口
+
+产物 (写入 -o/--out，默认当前目录):
+  meta.json   完整 dump-json（标题/时长/章节/分 P/字幕轨/格式列表）
+  cover.jpg   元数据里最高分辨率封面
+  video.mp4   当前环境真正能下载的最高分辨率（<= --max-height）
+  <video>.<lang>.srt  若有 CC 字幕（人工轨优先;Bilibili 追加 BBDown 回退）
+  audio.wav   无 CC 字幕时自动抽取（16kHz 单声道，供 ASR 转写）
+
+只做获取与落盘，不做内容判断。分 P/播放列表请先在 meta.json 里确认范围。
+缓存：media:<id>#<cred8> 原子束（meta/cover/video/srt/audio.wav），
+satisfies 双字段 height<=req<=req_cap + langs 子集，未满足即重抓。
+"""
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+# lgc-needs: get put neg release cat lane into wait satisfies claim cred atomic producer params owner-pid value breaker lane-note
+
+# LGC-PROBE-BLOCK v1 (python)
+LGC_BIN = os.environ.get("LGC_BIN", "lgc")  # 改它必须清 LGC_CAPS
+
+
+def _lgc_probe():  # 惰性每进程一次；LGC_CAPS 经 os.environ 缓存/继承
+    if os.environ.get("LGC_OFF"):
+        os.environ["LGC_CAPS"] = ""
+        return False
+    if "LGC_CAPS" not in os.environ:
+        caps = ""
+        p = shutil.which(LGC_BIN)
+        if p:
+            try:
+                r = subprocess.run(
+                    [p, "has"], capture_output=True, text=True, timeout=5
+                )
+                lines = (r.stdout or "").splitlines()
+                if (
+                    r.returncode == 0
+                    and lines
+                    and re.match(r"^lgc [0-9]+(\.[0-9]+)?$", lines[0])
+                ):
+                    caps = " ".join(lines[1:])
+            except Exception:
+                caps = ""
+        os.environ["LGC_CAPS"] = caps  # ""=已探缺席；key 缺席=未探
+    return bool(os.environ["LGC_CAPS"])
+
+
+def _lgc_has(cap):
+    return f" {cap} " in " {} ".format(os.environ.get("LGC_CAPS", ""))
+
+
+# /LGC-PROBE-BLOCK
+
+NS = "link-get"
+WAIT_MEDIA = 3600  # D26
+PRODUCER = "media-get@1"
+_VIDEO_NAME = re.compile(r"^video\.(mp4|mkv|webm|flv|mov|ts|m4v)$")
+_COVER_NAME = re.compile(r"^cover\.(jpe?g|png|webp)$")
+
+
+def run(cmd, **kw):
+    # 脱敏:-c/--cookie 后的参数（SESSDATA 等）不进 stderr 日志
+    shown = [
+        "***" if i and cmd[i - 1] in ("-c", "--cookie") else str(c)
+        for i, c in enumerate(cmd)
+    ]
+    print("+", " ".join(shown), file=sys.stderr)
+    return subprocess.run(cmd, **kw)
+
+
+# --- lgc best-effort 调用面（全部不抛异常、不改出口码）----------------------
+def _lgc(argv):
+    """→ (rc, stdout, stderr)；lgc 缺席/异常一律 rc!=0 空输出。"""
+    p = shutil.which(LGC_BIN)
+    if not p:
+        return 127, "", ""
+    try:
+        r = subprocess.run([p, *argv], capture_output=True, text=True)
+        return r.returncode, r.stdout or "", r.stderr or ""
+    except Exception:
+        return 1, "", ""
+
+
+def _replay_lgc_lines(serr):
+    for line in serr.splitlines():
+        if line.startswith(("cache: ", "lgc: ")):
+            print(line, file=sys.stderr)
+
+
+def cred8():
+    """D15：cookies/bilibili.txt 优先，缺席退 BBDown.data，再无 → anon。"""
+    primary = Path.home() / ".config/link-get/cookies/bilibili.txt"
+    files = [primary] if primary.exists() else [Path.home() / "BBDown.data"]
+    h = hashlib.sha256()
+    found = False
+    for f in files:
+        try:
+            h.update(f.read_bytes())
+            found = True
+        except OSError:
+            pass
+    return h.hexdigest()[:8] if found else "anon"
+
+
+def cache_get(key, out, satisfies, cred):
+    """→ (rc, materialized_paths)。旗标否决：缺任一 cap 整条 miss。"""
+    if os.environ.get("LGC_OFF"):
+        print("cache: off", file=sys.stderr)
+        return 1, []
+    if os.environ.get("LGC_REFRESH"):
+        print("cache: miss", file=sys.stderr)
+        return 1, []
+    if not _lgc_probe():
+        print("cache: off", file=sys.stderr)
+        return 1, []
+    for cap in ("into", "wait", "satisfies", "claim", "owner-pid", "cred"):
+        if not _lgc_has(cap):
+            print("cache: miss", file=sys.stderr)  # cap 缺席 → 整条 miss
+            return 1, []
+    rc, sout, serr = _lgc(
+        [
+            "get",
+            NS,
+            key,
+            "--into",
+            str(out),
+            "--wait",
+            str(WAIT_MEDIA),
+            "--satisfies",
+            json.dumps(satisfies),
+            "--claim",
+            "--owner-pid",
+            str(os.getpid()),
+            "--cred",
+            cred,
+        ]
+    )
+    _replay_lgc_lines(serr)
+    if rc != 0:
+        return rc, []
+    paths = [
+        line
+        for line in sout.splitlines()
+        if line and not line.startswith(("cache: ", "lgc: "))
+    ]
+    return 0, paths
+
+
+def cache_put(key, files, cred, params):
+    if os.environ.get("LGC_OFF") or not _lgc_probe():
+        return
+    for cap in ("atomic", "cred", "producer", "params", "owner-pid"):
+        if not _lgc_has(cap):
+            return  # 缺 cap → 整条 no-op，绝不丢旗标发降级 put
+    rc, _o, serr = _lgc(
+        [
+            "put",
+            NS,
+            key,
+            "--atomic",
+            "--producer",
+            PRODUCER,
+            "--cred",
+            cred,
+            "--params",
+            json.dumps(params),
+            "--owner-pid",
+            str(os.getpid()),
+            "--files",
+        ]
+        + [str(f) for f in files]
+    )
+    _replay_lgc_lines(serr)
+
+
+def cache_neg(key, reason, cred):
+    if os.environ.get("LGC_OFF") or not _lgc_probe() or not _lgc_has("cred"):
+        return
+    rc, _o, serr = _lgc(
+        [
+            "neg",
+            NS,
+            key,
+            "--reason",
+            reason,
+            "--cred",
+            cred,
+            "--owner-pid",
+            str(os.getpid()),
+        ]
+    )
+    _replay_lgc_lines(serr)
+
+
+def cache_release(key, cred):
+    """只清自己认领的 inflight marker（owner pid 不匹配则 no-op）。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe() or not _lgc_has("cred"):
+        return
+    _lgc(
+        [
+            "release",
+            NS,
+            key,
+            "--owner-pid",
+            str(os.getpid()),
+            "--cred",
+            cred,
+        ]
+    )
+
+
+def cache_cat(key):
+    """value 读出 → str|None（z_val 对应：OFF/REFRESH/缺席 → None）。"""
+    if os.environ.get("LGC_OFF") or os.environ.get("LGC_REFRESH"):
+        return None
+    if not _lgc_probe() or not _lgc_has("cat"):
+        return None
+    rc, out, _e = _lgc(["cat", NS, key])
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def cache_vput(key, value):
+    """value 写入（z_vput 对应）；kind 级 TTL 表（bili:b23=30d）自带期限。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe() or not _lgc_has("value"):
+        return
+    rc, _o, serr = _lgc(["put", NS, key, "--value", value])
+    _replay_lgc_lines(serr)
+
+
+def lane_fail(lane, key=None, reason="lane-fail", ttl=None):
+    """车道级失败（z_lfail 对应）：breaker++ + 可选 lane×key neg；不落内容墓碑。"""
+    if os.environ.get("LGC_OFF") or not _lgc_probe():
+        return
+    if _lgc_has("breaker"):
+        _lgc(["lane", NS, "fail", lane])
+    if key and _lgc_has("lane-note"):
+        argv = ["lane", NS, "note", lane, key, "--reason", reason]
+        if ttl is not None:
+            argv += ["--ttl", str(ttl)]
+        _lgc(argv)
+
+
+# 删除/下架实锤才配内容级墓碑（90d deleted）；其余失败不污染内容键。
+# 有序 (regex → class) 表——首个命中定类：
+#   auth_expired  私有/会员/地区锁/登录墙——可换凭证/地区重试，cred 域 1d
+#                 负缓存即解（region-lock 文案常含 'video unavailable'，必须
+#                 先判 auth 再认 permanent，否则误落 90d 墓碑）
+#   permanent     实锤——deleted 墓碑 + exit4
+#   未命中         transient——lane 记账 + exit5
+# 'HTTP Error 404' 只认页面级语境：同一行须有完整 ': Not Found'，且该行不含
+# 下载阶段字样（manifest/fragment/video data/m3u8/mpd/f4m/subtitles/
+# segment/chunk/[download] 标）——传输面 404 是 CDN/manifest 抖动不是内容终态。
+_FAILURE_RULES = (
+    (
+        re.compile(
+            r"available in your (?:country|region)"
+            r"|geo-?restrict"
+            r"|(?:country|region)[- ]restrict"
+            r"|blocked(?: it)? in your (?:country|region)"
+            r"|您所在的(?:国家|地区)|所在地区|地区限制|仅限[^\n]{0,12}地区"
+            r"|private video|this video is private"
+            r"|sign in if you.{0,10}been granted access"
+            r"|sign in to confirm your age|age[- ]restrict"
+            r"|members only|membership required|join this channel"
+            r"|available to (?:this channel.?s )?members"
+            r"|premium members?"
+            r"|requires (?:a )?(?:payment|purchase)"
+            r"|login required|需要登录|大会员|付费视频",
+            re.IGNORECASE,
+        ),
+        "auth_expired",
+    ),
+    (
+        re.compile(
+            r"video unavailable"
+            r"|this video (?:is|has been) (?:unavailable|removed|deleted)"
+            r"|removed by (?:the )?(?:uploader|author)"
+            r"|no longer available"
+            r"|account .{0,40}terminated"
+            r"|copyright (?:claim|infringement|takedown|strike)"
+            r"|^(?![^\n]*(?:manifest|fragment|m3u8|mpd|f4m|video data"
+            r"|subtitles?|segments?|chunks?|\[download\]))[^\n]*"
+            r"HTTP Error 404: Not Found"
+            r"|视频不见|视频不存在|已删除|被删除|已失效|因违规|该内容已被"
+            r"|被下架|已下架|设为私密|账[号戶].{0,4}注销|版权方",
+            re.IGNORECASE | re.MULTILINE,
+        ),
+        "permanent",
+    ),
+)
+
+
+def _classify_failure(msg):
+    """首个命中规则定类 → 'permanent'|'auth_expired'|'transient'（默认）。"""
+    for rx, cls in _FAILURE_RULES:
+        if rx.search(msg):
+            return cls
+    return "transient"
+
+
+def fail(key, cred, msg, *, lane=None):
+    """终态失败按类记账（统一 neg 政策）：
+    permanent（删除/下架实锤）→ 内容级 deleted 墓碑 + exit4；
+    auth_expired（私有/会员/地区锁）→ cred 域 auth-expired 负缓存（1d，
+    换凭证/换地区即解；fetch_engine::record_error 同政策）+ exit5；
+    transient/网络类 → 只记 lane 失败不写内容墓碑 + exit5。
+    无 lane 可归的本地异常不记账。"""
+    cls = _classify_failure(msg)
+    if cls == "permanent":
+        cache_neg(key, "deleted", cred)
+        code = 4
+    elif cls == "auth_expired":
+        # cred 域 neg：绑定当前凭证指纹，换凭证即换键解封；不撞共享 breaker
+        cache_neg(key, "auth-expired", cred)
+        code = 5
+    else:
+        if lane:
+            lane_fail(lane, key)
+        code = 5
+    cache_release(key, cred)
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+# --- 输入闸（SSRF parity）与 b23.tv 解析 -------------------------------------
+_LAN_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
+_LAN_SUFFIXES = (".localhost", ".internal", ".lan", ".local", ".home.arpa")
+# bash 闸 192.0.0/24 整段拒；py is_global 放 .9/.10（PCP/TSP anycast）——补齐拒
+_V4_EXTRA_DENY = ipaddress.ip_network("192.0.0.0/24")
+
+
+_MALFORMED = object()  # _ipv4_loose 哨兵：畸形数字字面（区别于"不是字面"）
+
+
+def _ipv4_loose(h):
+    """inet_aton 异形 IPv4（127.1 / 0x7f000001 / 2130706433 / 0177.0.0.1）
+    → IPv4Address | _MALFORMED | None(主机名)。对齐 _common.sh::_ip4_norm
+    三态：先整串过 [0-9a-fx.] 字面字符集——含其它字符一律主机名放行
+    （01net.com/0x.org/0xzz.1.1.1 等），只有纯数字/hex 样标签才进字面
+    解析；段溢出/坏八进制/坏十六进制/空段/全数字 >4 段 → _MALFORMED
+    （拒，不当主机名放行）；a-f 字母段 → None（dead.beef 式主机名）。
+    ipaddress 不收这些写法但 getaddrinfo/yt-dlp 认——字面检查必须自己解码。"""
+    if not h or re.search(r"[^0-9a-fx.]", h):
+        return None  # 字面字符集外的字符 → 主机名（bash 外层同款过滤）
+    parts = h.split(".")
+    if len(parts) > 4:
+        # 全数字 5+ 段不可能是合法主机名（bash 闸畸形清单同拒）
+        return _MALFORMED if all(p.isdigit() for p in parts) else None
+    nums = []
+    for p in parts:
+        if not p:
+            return _MALFORMED  # 空段（连点）→ 畸形
+        if p.startswith("0x"):
+            rest = p[2:]
+            if not rest or re.search(r"[^0-9a-f]", rest):
+                return _MALFORMED  # 坏十六进制段（'0x'/'0xg'/'0xx'）
+            n = int(rest, 16)
+        elif len(p) > 1 and p.startswith("0"):
+            if re.search(r"[^0-7]", p):
+                return _MALFORMED  # '08'/'09' 坏八进制段
+            n = int(p, 8)
+        elif p.isdigit():
+            n = int(p, 10)
+        else:
+            return None  # a-f 字母段（dead.beef 式）→ 主机名
+        nums.append(n)
+    head, last = nums[:-1], nums[-1]
+    if any(n > 0xFF for n in head):
+        return _MALFORMED  # 前段 >255 → 畸形
+    tail_bits = 8 * (4 - len(head))
+    if last >= (1 << tail_bits):
+        return _MALFORMED  # 末段溢出 → 畸形
+    addr = last
+    shift = tail_bits
+    for n in reversed(head):
+        addr |= n << shift
+        shift += 8
+    try:
+        return ipaddress.IPv4Address(addr)
+    except ipaddress.AddressValueError:
+        return _MALFORMED
+
+
+def _v6_embeds_v4(ip):
+    """v6 内嵌 v4 一律拒——不解包复核：mapped/translated/compat/NAT64/
+    6to4/teredo/ISATAP 任何 v4-嵌入形都不可信（bash 闸按方案逐种拆，
+    这里直接全拒，少一条漏检路径）。"""
+    p = ip.packed
+    return (
+        ip.ipv4_mapped is not None  # ::ffff:a.b.c.d/96
+        or ip.sixtofour is not None  # 2002::/16
+        or ip.teredo is not None  # 2001::/32
+        or (p[:12] == b"\x00" * 12 and int(ip) > 1)  # ::a.b.c.d v4-compat
+        or p[:12] == b"\x00" * 8 + b"\xff\xff\x00\x00"  # ::ffff:0:0/96 translated
+        or p[:12] == b"\x00\x64\xff\x9b" + b"\x00" * 8  # 64:ff9b::/96 NAT64 WKP
+        or p[8:12] in (b"\x00\x00\x5e\xfe", b"\x02\x00\x5e\xfe")  # ISATAP IID
+    )
+
+
+def _ssrf_check(url):
+    """输入 URL 字面 host 闸 → None 放行 | str 拒因。与 _common.sh::_guard_url
+    对齐：URL 空白字符、非 http(s) 方案、authority 含 \\（BBDown 把 \\@ 前段
+    当 host 的解析差异）/% 编码/非 ASCII 字节、空 host、localhost 系主机名、
+    畸形数字字面（inet_aton 全形态归一）、非 is_global IP 字面（私网/回环/
+    link-local/CGNAT/reserved/unspecified 全收）+ multicast、v6 内嵌 v4
+    一律拒。纯字面检查，不做 DNS。"""
+    if re.search(r"[\t\n\v\f\r ]", url):
+        return "URL contains whitespace"
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "unparseable URL"
+    if not url.startswith(("http://", "https://")):
+        # bash 闸 case 按字节匹配——'HTTP://' 式大写 scheme 一并拒
+        # （urlsplit 会把 scheme 归小写，宽松判定会漏）
+        return "scheme not http(s)"
+    if "\\" in u.netloc:
+        return "authority contains backslash"
+    if "%" in u.netloc:
+        return "authority contains %-encoding"
+    if not (u.netloc.isascii() and u.netloc.isprintable()):
+        return "authority has non-ASCII/control bytes"
+    hostport = u.netloc.rsplit("@", 1)[-1]  # userinfo 障眼：最末 @ 之后才是真 host
+    if not hostport.startswith("[") and hostport.count(":") >= 2:
+        # 裸 IPv6 字面（缺 bracket 的非标形也照查，对齐 bash 闸 *:*:* 分支；
+        # urllib 会把 'fe80::1' 当 host:port 切——必须自己整串审）
+        try:
+            ip6 = ipaddress.IPv6Address(hostport)
+        except ipaddress.AddressValueError:
+            return f"malformed IPv6 literal: {hostport}"
+        if _v6_embeds_v4(ip6):
+            return f"host {hostport} ({ip6}) embeds IPv4"
+        if not ip6.is_global or ip6.is_multicast:
+            return f"host {hostport} ({ip6}) is not public"
+        return None
+    h = (u.hostname or "").lower().rstrip(".")
+    if not h:
+        return "empty host"
+    if re.search(r"[*?\[\]]", h):
+        return f"host {h} contains glob char"  # bash 闸同款——合法 host 不含
+    if h in _LAN_HOSTNAMES or h.endswith(_LAN_SUFFIXES):
+        return f"hostname {h} is local"
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        ip = _ipv4_loose(h)
+    if ip is _MALFORMED:
+        return f"malformed IP literal: {h}"
+    if ip is not None:
+        if isinstance(ip, ipaddress.IPv6Address) and _v6_embeds_v4(ip):
+            return f"host {h} ({ip}) embeds IPv4"
+        if (
+            not ip.is_global
+            or ip.is_multicast
+            or (isinstance(ip, ipaddress.IPv4Address) and ip in _V4_EXTRA_DENY)
+        ):
+            return f"host {h} ({ip}) is not public"
+    elif ":" in h:
+        return f"malformed IP literal: {h}"  # 缺 bracket 的 v6 残形
+    return None
+
+
+class _SsrfBlocked(Exception):
+    """重定向链触到被闸主机——与纯网络失败区分：被拦链绝不交 yt-dlp 自跟。"""
+
+
+class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
+    """逐跳重过 SSRF 闸——b23/封面重定向目标可以是任意主机，不能闭眼跟。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        bad = _ssrf_check(newurl)
+        if bad:
+            raise _SsrfBlocked(f"redirect to {newurl}: {bad}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _resolve_redirects(url):
+    """HEAD（405/501→GET 兜底）跟 30x → 终态 URL|None；不读 body，
+    等价 curl -sIL -w url_effective；每跳与出口都过 SSRF 闸。
+    纯网络失败 → None；入口或链上任一跳触闸 → raise _SsrfBlocked。"""
+    bad = _ssrf_check(url)
+    if bad:
+        raise _SsrfBlocked(f"{url}: {bad}")
+    opener = urllib.request.build_opener(_CheckedRedirect())
+    final = None
+    for method in ("HEAD", "GET"):
+        req = urllib.request.Request(
+            url, method=method, headers={"User-Agent": "media-get/1"}
+        )
+        try:
+            with opener.open(req, timeout=15) as resp:
+                final = resp.geturl()
+        except urllib.error.HTTPError as e:
+            if e.code in (405, 501) and method == "HEAD":
+                continue
+            final = e.geturl() or None  # 终态错误页：重定向链已尽其用
+        except _SsrfBlocked:
+            raise  # 被拦 ≠ 网络失败——调用方必须拒抓原链
+        except Exception:
+            final = None
+        break
+    if final:
+        bad = _ssrf_check(final)
+        if bad:
+            raise _SsrfBlocked(f"{final}: {bad}")
+        return final
+    return None
+
+
+def _bili_target_ok(url):
+    """解析目标白名单——对齐 bilibili-get:37 四个 glob，但按 host/path 判。
+    值缓存可被写任意串：空白/控制/非 ASCII 字节先拒（'BV1xx\\nhttp://127.0.0.1'
+    式拼接注入——urlsplit 只取首段 host 照样放行），scheme 再钉死 http(s)
+    （file://ftp://gopher:// 不采）。"""
+    if (
+        not isinstance(url, str)
+        or not (url.isascii() and url.isprintable())
+        or " " in url
+    ):
+        return False
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    if (u.scheme or "").lower() not in ("http", "https"):
+        return False
+    h = (u.hostname or "").lower()
+    if not (h == "bilibili.com" or h.endswith(".bilibili.com")):
+        return False
+    if h == "t.bilibili.com" or h.endswith(".t.bilibili.com"):
+        return True
+    return u.path.startswith(("/video/", "/opus/", "/bangumi/"))
+
+
+def resolve_b23(url):
+    """b23.tv 短链 → canonical bilibili URL。
+    链被 SSRF 闸拦 → exit2 拒抓（原链交 yt-dlp 自跟 = 绕过逐跳闸）；
+    纯网络失败/非白名单目标 → 原样返回。30d 值缓存 bili:b23:<code>
+    （复用 bilibili-get:26-47 模式）。"""
+    try:
+        u = urllib.parse.urlsplit(url)
+        # FQDN 尾点归一（'b23.tv.' == 'b23.tv'），与 _ssrf_check 同款 rstrip
+        host = (u.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return url
+    if not (host == "b23.tv" or host.endswith(".b23.tv")):
+        return url  # 非短链域：原样（含 *.com/?u=b23.tv/x 子串撞车）
+    m = re.match(r"/([A-Za-z0-9_-]+)", u.path or "")
+    code = m.group(1) if m else ""
+    if code:
+        cached = cache_cat(f"bili:b23:{code}")
+        if cached and _bili_target_ok(cached):
+            print("==> b23.tv 缓存命中", file=sys.stderr)
+            return cached
+    try:
+        final = _resolve_redirects(url)
+    except _SsrfBlocked as e:
+        print(f"media-get: 拒绝 URL（b23 重定向链被拦：{e}）", file=sys.stderr)
+        sys.exit(2)
+    if final and _bili_target_ok(final):
+        if code:
+            cache_vput(f"bili:b23:{code}", final)
+        print(f"==> b23.tv 解析为 {final}", file=sys.stderr)
+        return final
+    if final is None:
+        # 纯网络失败可降级（yt-dlp 自己还能解），但明示此链未检
+        print(
+            f"==> b23.tv 解析失败——未检 URL 交 yt-dlp 自解：{url}",
+            file=sys.stderr,
+        )
+    return url
+
+
+def _fetch_cover(thumb, stage):
+    """封面落盘 → ext。入口先自过 SSRF 闸（与 _resolve_redirects 同款门：
+    调用方已查过也再查——纵深防御），再逐跳重过闸（_CheckedRedirect）：
+    公网封面 302 进内网必须拒——默认 opener 会闭眼跟链。"""
+    bad = _ssrf_check(thumb)
+    if bad:
+        raise _SsrfBlocked(f"{thumb}: {bad}")
+    ext = "jpg" if "jpg" in thumb or "jpeg" in thumb else "png"
+    opener = urllib.request.build_opener(_CheckedRedirect())
+    with opener.open(thumb, timeout=30) as resp:
+        (stage / f"cover.{ext}").write_bytes(resp.read())
+    return ext
+
+
+# --- 产物工具 ---------------------------------------------------------------
+def _keep_name(name):
+    """收编白名单（D7）：meta/cover/video/srt/audio.wav，其余留在 staging。"""
+    return (
+        name in {"meta.json", "audio.wav"}
+        or name.endswith(".srt")
+        or bool(_VIDEO_NAME.match(name))
+        or bool(_COVER_NAME.match(name))
+    )
+
+
+def collect(stage, out):
+    """白名单名收编 → mv 进 out，保留相对路径（交付先于入库）。"""
+    moved = []
+    for p in sorted(stage.rglob("*")):
+        if not p.is_file() or not _keep_name(p.name):
+            continue
+        dest = out / p.relative_to(stage)
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(p), str(dest))
+            moved.append(dest)
+        except (OSError, shutil.Error) as e:
+            print(f"collect: {e}", file=sys.stderr)
+    return moved
+
+
+def _srt_lang(name):
+    """video.<lang>.srt → <lang>；无语言段的裸 *.srt 不采。"""
+    stem = name[:-4]
+    if "." not in stem:
+        return None
+    return stem.rsplit(".", 1)[-1]
+
+
+def probe_height(video):
+    """束内视频实际高度（satisfies 的 height 字段）；测不出 → None→永不满足。"""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe or video is None:
+        return None
+    try:
+        r = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=height",
+                "-of",
+                "csv=p=0",
+                str(video),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return int(r.stdout.strip().splitlines()[0])
+    except Exception:
+        return None
+
+
+def extract_audio(video, wav):
+    r = run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(wav),
+        ]
+    )
+    if r.returncode == 0:
+        print(
+            "audio.wav extracted — transcribe with the asr skill:",
+            file=sys.stderr,
+        )
+        print(
+            "  ~/.agents/skills/asr/.venv/bin/python "
+            "~/.agents/skills/asr/scripts/transcribe.py "
+            "audio.wav --lang zh --out audio.srt",
+            file=sys.stderr,
+        )
+    return r.returncode == 0
+
+
+def replay_meta(meta_path):
+    """命中回放 title/duration/cc 决策行（meta.json 在束内）。"""
+    try:
+        meta = json.loads(Path(meta_path).read_text())
+    except Exception:
+        return
+    print(f"title: {meta.get('title')}", file=sys.stderr)
+    print(
+        f"duration: {meta.get('duration')}s, parts: {meta.get('n_entries') or 1}",
+        file=sys.stderr,
+    )
+    subs = list((meta.get("subtitles") or {}).keys())
+    autos = list((meta.get("automatic_captions") or {}).keys())
+    print(
+        f"cc subtitles: {subs or 'none'}; auto captions: {autos or 'none'}",
+        file=sys.stderr,
+    )
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("url")
+    ap.add_argument("-o", "--out", default=".")
+    ap.add_argument("--max-height", type=int, default=1080)
+    ap.add_argument("--langs", default="zh-Hans,zh-CN,zh,ai-zh,en,en-US")
+    ap.add_argument("--refresh", action="store_true", help="跳过全部缓存读，成功仍写回")
+    ap.add_argument("--no-cache", action="store_true", help="读写全绕=裸行为")
+    ap.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=None,
+        help="覆盖本次正缓存 TTL（秒，不作用负缓存）",
+    )
+    args = ap.parse_args()
+
+    # SSRF 闸：字面 host 拒内网（yt-dlp 自己就会抓 127.0.0.1/169.254.x.x）
+    bad = _ssrf_check(args.url)
+    if bad:
+        print(f"media-get: 拒绝 URL（{bad}）：{args.url}", file=sys.stderr)
+        sys.exit(2)
+
+    if args.refresh:
+        os.environ["LGC_REFRESH"] = "1"
+    if args.no_cache:
+        os.environ["LGC_OFF"] = "1"
+    if args.cache_ttl is not None:
+        os.environ["LGC_TTL"] = str(args.cache_ttl)
+    out = Path(args.out)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"cannot create out dir: {e}", file=sys.stderr)
+        sys.exit(5)
+
+    # 扫掉历史 SIGKILL 遗留的 staging（>1h；可能含 BBDown.data 凭据）
+    now = time.time()
+    for d in out.glob(".lgc-stage-*"):
+        try:
+            if d.is_dir() and now - d.stat().st_mtime > 3600:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+
+    req_langs = [lang for lang in args.langs.split(",") if lang]
+    cred = cred8()
+    args.url = resolve_b23(args.url)  # 短链先归一——b23.tv/x 与 BV 同键
+    key = "media:" + args.url
+    pid = os.getpid()
+
+    # --- 缓存探测：hit→回放即返；neg→按契约回放出口码；miss→照常抓 ---------
+    rc, paths = cache_get(
+        key,
+        out,
+        {"max_height": args.max_height, "langs": req_langs},
+        cred,
+    )
+    if rc == 0:
+        replay_meta(out / "meta.json")
+        names = {Path(p).name for p in paths}
+        # D7：束有 video 无 audio.wav 且无 srt → 就地 ffmpeg 重抽
+        if not any(n.endswith(".srt") for n in names) and "audio.wav" not in names:
+            video = next(
+                (Path(p) for p in paths if _VIDEO_NAME.match(Path(p).name)),
+                None,
+            )
+            if video is not None and not extract_audio(video, out / "audio.wav"):
+                (out / "audio.wav").unlink(missing_ok=True)
+        for p in paths:
+            print(f"==> 已存 {p}（cache）", file=sys.stderr)
+        return
+    if rc in (3, 4, 5):
+        sys.exit(rc)  # neg 回放：3=notrack / 4=deleted / 5=unavailable
+
+    # --- 抓取：全程在 $OUT/.lgc-stage-<pid>/ 内跑，白名单收编进 out ---------
+    stage = out / f".lgc-stage-{pid}"
+    bbdir = Path.home() / ".cache/link-get/tmp" / f"bbdown-{pid}"
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        stage.mkdir(parents=True)
+    except OSError as e:
+        print(f"cannot create staging dir: {e}", file=sys.stderr)
+        sys.exit(5)
+    delivered = []
+    subs, autos = [], []
+    try:
+        # 1. metadata
+        r = run(
+            ["yt-dlp", "--dump-json", "--no-download", args.url],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            fail(key, cred, f"yt-dlp metadata failed:\n{r.stderr}", lane="yt-dlp")
+        try:
+            meta = json.loads(r.stdout.strip().splitlines()[0])
+        except Exception:
+            fail(key, cred, "yt-dlp metadata unparseable", lane="yt-dlp")
+        (stage / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+        print(f"title: {meta.get('title')}", file=sys.stderr)
+        print(
+            f"duration: {meta.get('duration')}s, parts: {meta.get('n_entries') or 1}",
+            file=sys.stderr,
+        )
+        subs = list((meta.get("subtitles") or {}).keys())
+        autos = list((meta.get("automatic_captions") or {}).keys())
+        print(
+            f"cc subtitles: {subs or 'none'}; auto captions: {autos or 'none'}",
+            file=sys.stderr,
+        )
+
+        # 2. cover（失败不致命；仅 http(s) + 超时 + 逐跳闸，防 file:// 型
+        # SSRF 与公网封面 302 跳进内网）
+        thumb = meta.get("thumbnail") or ""
+        if thumb.startswith(("http://", "https://")) and _ssrf_check(thumb) is None:
+            try:
+                ext = _fetch_cover(thumb, stage)
+                print(f"cover -> cover.{ext}", file=sys.stderr)
+            except Exception as e:
+                print(f"cover fetch failed (non-fatal): {e}", file=sys.stderr)
+
+        # 3. video
+        fmt = f"bv*[height<={args.max_height}]+ba/b[height<={args.max_height}]"
+        r = run(
+            [
+                "yt-dlp",
+                "-f",
+                fmt,
+                "--merge-output-format",
+                "mp4",
+                "-o",
+                str(stage / "video.%(ext)s"),
+                args.url,
+            ]
+        )
+        if r.returncode != 0:
+            hint = "yt-dlp --cookies-from-browser chrome"
+            if ("bilibili.com" in args.url or "b23.tv" in args.url) and shutil.which(
+                "BBDown"
+            ):
+                hint = "BBDown <URL>（扫码登录后可拿 1080P+/HiRes）；或 " + hint
+            fail(
+                key,
+                cred,
+                f"video download failed; login-gated? try: {hint}",
+                lane="yt-dlp",
+            )
+        video = next(
+            (p for p in sorted(stage.glob("video.*")) if _VIDEO_NAME.match(p.name)),
+            None,
+        )
+        if video is None:
+            fail(
+                key,
+                cred,
+                "video download produced no video.* file",
+                lane="yt-dlp",
+            )
+
+        # 4. subtitles (manual first, then auto)
+        have_sub = False
+        for flag in (["--write-subs"], ["--write-subs", "--write-auto-subs"]):
+            r = run(
+                [
+                    "yt-dlp",
+                    *flag,
+                    "--sub-langs",
+                    args.langs,
+                    "--convert-subs",
+                    "srt",
+                    "--skip-download",
+                    "-o",
+                    str(stage / "video.%(ext)s"),
+                    args.url,
+                ]
+            )
+            got = list(stage.glob("video.*.srt"))
+            if r.returncode == 0 and got:
+                print(f"subtitles -> {[g.name for g in got]}", file=sys.stderr)
+                have_sub = True
+                break
+
+        # 4.5 Bilibili 兜底:yt-dlp 拿不到字幕时，BBDown 直连 B 站字幕 API 再试。
+        # 匿名 API 常返回空字幕列表，登录态才能拿 AI 字幕/会员字幕——凭据优先复用
+        # cwd/家目录的 BBDown.data，其次 BILI_* 环境变量。
+        # BBDown work-dir 放 ~/.cache/link-get/tmp/ 而非 $OUT：SIGKILL 也不会把
+        # 含 SESSDATA 的 BBDown.data 留在用户产物目录（D7）。
+        if not have_sub and ("bilibili.com" in args.url or "b23.tv" in args.url):
+            bbdown = shutil.which("BBDown")
+            if bbdown:
+                try:
+                    # PID 复用会撞上 SIGKILL 孤儿目录：预清防陈旧 .srt/BBDown.data
+                    shutil.rmtree(bbdir, ignore_errors=True)
+                    bbdir.mkdir(parents=True, exist_ok=True)
+                    bbdir.chmod(0o700)
+                except OSError as e:
+                    print(f"BBDown work dir unusable: {e}", file=sys.stderr)
+                    bbdown = None
+            if bbdown:
+                cmd = [
+                    bbdown,
+                    "--sub-only",
+                    "--skip-ai=false",  # AI 字幕默认被跳过，关掉
+                    "-F",
+                    "video",  # 单 P 命名对齐 video.*.srt 约定
+                    "--work-dir",
+                    str(bbdir),
+                ]
+                data = next(
+                    (
+                        p
+                        for p in (
+                            Path.cwd() / "BBDown.data",
+                            Path.home() / "BBDown.data",
+                        )
+                        if p.exists()
+                    ),
+                    None,
+                )
+                if data and not (bbdir / "BBDown.data").exists():
+                    try:
+                        shutil.copy(data, bbdir / "BBDown.data")
+                    except OSError:
+                        pass
+                if not (bbdir / "BBDown.data").exists():
+                    cookie = ";".join(
+                        f"{k}={os.environ[e]}"
+                        for k, e in (
+                            ("SESSDATA", "BILI_SESSDATA"),
+                            ("bili_jct", "BILI_JCT"),
+                            ("buvid3", "BILI_BUVID3"),
+                        )
+                        if os.environ.get(e)
+                    )
+                    if cookie:
+                        cmd += ["-c", cookie]
+                cmd.append(args.url)
+                try:
+                    run(cmd, cwd=bbdir, timeout=180)
+                except subprocess.TimeoutExpired:
+                    print(
+                        "BBDown timed out, continuing to ASR fallback", file=sys.stderr
+                    )
+                got = list(bbdir.rglob("*.srt"))
+                for g in got:
+                    try:
+                        shutil.move(str(g), str(stage / g.name))
+                    except (OSError, shutil.Error):
+                        pass
+                got = list(stage.rglob("*.srt"))
+                if got:
+                    print(
+                        f"subtitles (BBDown) -> "
+                        f"{[str(g.relative_to(stage)) for g in got]}",
+                        file=sys.stderr,
+                    )
+                    have_sub = True
+            else:
+                print(
+                    "no yt-dlp subtitles and BBDown not installed — ASR fallback",
+                    file=sys.stderr,
+                )
+
+        # 5. audio for ASR fallback（失败不留半截 wav 进束）
+        if not have_sub and not extract_audio(video, stage / "audio.wav"):
+            (stage / "audio.wav").unlink(missing_ok=True)
+
+        # 收编：白名单名 → mv 进 out（交付先于入库）
+        delivered = collect(stage, out)
+    except Exception as e:
+        fail(key, cred, f"runtime failure: {e}")
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+        shutil.rmtree(bbdir, ignore_errors=True)
+
+    # --- 入库：产物已在 out；put 失败只 warn，不改出口码 ---------------------
+    if delivered:
+        obtained = sorted(
+            {lang for lang in (_srt_lang(f.name) for f in delivered) if lang}
+        )
+        height = probe_height(
+            next((f for f in delivered if _VIDEO_NAME.match(f.name)), None)
+        )
+        if height is None:
+            height = meta.get("height")  # ffprobe 缺席 → 用 yt-dlp meta 高度兜底
+        if height is None:
+            # height=None 的束永不满足 satisfies → 白占空间，不入库
+            print("cache: skip put — height unknown", file=sys.stderr)
+            return
+        params = {
+            "height": height,
+            "req_cap": args.max_height,
+            "langs_obtained": obtained,
+            "subs_known": sorted(set(subs) | set(autos) | set(obtained)),
+        }
+        cache_put(key, delivered, cred, params)
+
+
+if __name__ == "__main__":
+    main()
