@@ -17,6 +17,11 @@
 | [video-render-pdf](skills/video-render-pdf/SKILL.md) | 从视频、字幕与关键帧生成中文 LaTeX 课程笔记及 PDF。 |
 | [setup-toolchain](skills/setup-toolchain/SKILL.md) | 配置格式化、lint、pre-commit、CI、agent 入口和 Markdown 预览环境。 |
 | [skill-management](skills/skill-management/SKILL.md) | 维护多 CLI 共用的 skill 与 AGENTS.md，检查软链、命名和依赖。 |
+| [document-writing](skills/document-writing/SKILL.md) | 编写技术文档、论文笔记和伪代码。 |
+| [conventional-commits](skills/conventional-commits/SKILL.md) | 编写符合 Conventional Commits 的提交信息。 |
+| [peer-sessions](skills/peer-sessions/SKILL.md) | 感知和编排本机其他 Claude Code 会话。 |
+| [frontend-design](skills/frontend-design/SKILL.md) | 设计有明确视觉方向的 Web 界面。 |
+| [diagram-design](skills/diagram-design/SKILL.md) | 创建架构图、流程图和数据图。 |
 
 plot-skill 和 report-download 已移入 [`vendor/`](vendor/README.md)，保留历史内容，不参与默认安装。图表任务使用 figure-viz。
 
@@ -35,10 +40,10 @@ mkdir -p "$HOME/.agents/skills/memory-skill"
 rsync -a --delete skills/memory-skill/ "$HOME/.agents/skills/memory-skill/"
 ```
 
-安装全部现役 skill：
+安装默认 skill 集合：
 
 ```bash
-python scripts/install_skill.py memory-skill paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management --dest-root ~/.agents/skills
+python scripts/install_skill.py memory-skill paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
 ```
 
 同步本仓附带的 local agents：
@@ -59,3 +64,7 @@ rsync -a agents/ "$HOME/.codex/agents/"
 paper-note-skill 双语批注 PDF 样例：[paper_note_bilingual.pdf](assets/paper_note_bilingual.pdf)
 
 figure-viz 图表示例：[`skills/figure-viz/scripts/examples/`](skills/figure-viz/scripts/examples/)
+
+## 按需安装的 skill
+
+`peer-sessions`、`frontend-design` 和 `diagram-design` 保存在 `skills/`，不包含在上述默认安装命令中。只有明确需要时才按名称安装。

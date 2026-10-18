@@ -1,0 +1,12 @@
+# peer-sessions 依赖 — overseer.py spawn 的对象就是 claude 本体
+
+[[dep]]
+name = "claude"
+check = "command -v claude"
+install = "curl -fsSL https://claude.ai/install.sh | bash"
+
+[[dep]]
+name = "uv"
+check = "command -v uv"
+install = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+upgrade = "uv self update"

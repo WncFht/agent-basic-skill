@@ -6,7 +6,7 @@
 
 ```bash
 python scripts/install_skill.py memory-skill --dest-root ~/.agents/skills
-python scripts/install_skill.py paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management --dest-root ~/.agents/skills
+python scripts/install_skill.py paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
 ```
 
 安装器的行为：
@@ -41,3 +41,7 @@ memory-skill 安装后还需要初始化或接管一个 memory 数据仓：
 ```
 
 详见 [skills/memory-skill/README.md](skills/memory-skill/README.md)。
+
+## 按需安装的 skill
+
+`peer-sessions`、`frontend-design` 和 `diagram-design` 保存在 `skills/`，不包含在上述默认安装命令中。只有明确需要时才按名称安装。

@@ -1,0 +1,3 @@
+interface:
+  display_name: "peer-sessions"
+  short_description: "感知、通知与编排本机其他 Claude Code 会话（含 overseer 控制面）"

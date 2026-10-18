@@ -1,0 +1,5 @@
+interface:
+  display_name: "Diagram Design"
+  short_description: "Editorial self-contained HTML/SVG diagrams — 39 types"
+policy:
+  allow_implicit_invocation: true

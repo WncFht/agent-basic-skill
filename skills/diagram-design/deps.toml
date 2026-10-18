@@ -1,0 +1,6 @@
+# diagram-design 依赖 — extract/self_check 脚本只用 stdlib，要求 python3 在场
+
+[[dep]]
+name = "python3"
+check = "command -v python3"
+version = "python3 --version"
