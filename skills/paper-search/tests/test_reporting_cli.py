@@ -3,7 +3,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from reporting import render_markdown
+
+
+@pytest.fixture(autouse=True)
+def isolated_artifact_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("PAPER_SEARCH_ROOT", str(tmp_path / "artifacts"))
 
 
 def sample_report():
@@ -159,7 +166,7 @@ def test_cli_writes_non_overwriting_markdown_report_end_to_end(tmp_path):
         capture_output=True,
         check=True,
     )
-    reports = list((tmp_path / "paper-search-reports").glob("*.md"))
+    reports = list((tmp_path / "artifacts" / "reports").glob("*.md"))
     assert len(reports) == 1
     assert "## All results" in result.stdout
     assert f"report saved: {reports[0]}" in result.stderr
@@ -208,9 +215,10 @@ def test_cli_writes_run_summary_and_stderr_log(tmp_path):
     assert f"run log saved: {run_files[0]}" in result.stderr
 
 
-def test_cli_anchors_artifacts_to_git_root(tmp_path, monkeypatch):
+def test_cli_uses_shared_home_directory_from_nested_repo(tmp_path, monkeypatch):
     script = Path(__file__).resolve().parents[1] / "scripts" / "search_papers.py"
     monkeypatch.delenv("PAPER_SEARCH_ROOT", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo = tmp_path / "repo"
     nested = repo / "a" / "b"
     nested.mkdir(parents=True)
@@ -237,11 +245,13 @@ def test_cli_anchors_artifacts_to_git_root(tmp_path, monkeypatch):
         capture_output=True,
         check=True,
     )
-    reports = list((repo / "paper-search-reports").glob("*.md"))
-    run_files = list((repo / "paper-search-logs").glob("**/run.json"))
+    shared = tmp_path / "home" / ".local" / "share" / "paper-search"
+    reports = list((shared / "reports").glob("*.md"))
+    run_files = list((shared / "logs").glob("**/run.json"))
     assert len(reports) == 1
     assert len(run_files) == 1
-    assert not (nested / "paper-search-reports").exists()
+    assert set(repo.iterdir()) == {repo / "a", repo / ".git"}
+    assert list(nested.iterdir()) == []
     assert f"report saved: {reports[0]}" in result.stderr
 
 
@@ -269,7 +279,7 @@ def test_cli_can_disable_run_logging(tmp_path):
         capture_output=True,
         check=True,
     )
-    assert not (tmp_path / "paper-search-logs").exists()
+    assert not (tmp_path / "artifacts" / "logs").exists()
 
 
 def test_cli_records_enrich_citations_flag_in_run_log(tmp_path):
@@ -304,3 +314,11 @@ def test_cli_records_enrich_citations_flag_in_run_log(tmp_path):
     summary = json.loads(run_files[0].read_text(encoding="utf-8"))
     assert summary["request"]["enrich_citations"] is True
     assert summary["status"] == "success"
+
+
+def test_artifact_root_expands_explicit_override(tmp_path, monkeypatch):
+    from _artifacts import artifact_root
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PAPER_SEARCH_ROOT", "~/custom-search")
+    assert artifact_root() == tmp_path / "custom-search"

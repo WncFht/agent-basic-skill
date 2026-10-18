@@ -46,7 +46,7 @@ uv run .agents/skills/paper-search/scripts/search_papers.py \
 
 ### 4. 交付
 
-`--format markdown` 的输出即成品报告，同时自动落盘到 `<artifact-root>/paper-search-reports/`(不覆盖)。artifact root 的解析顺序：`PAPER_SEARCH_ROOT` 环境变量 → 最近的含 `.git` 的祖先目录 (项目根) → `$PWD`。运行日志同理落 `<artifact-root>/paper-search-logs/`。在仓库内从任何子目录调用，产物都汇聚到项目根。
+`--format markdown` 的输出即成品报告，同时自动落盘到 `~/.local/share/paper-search/reports/`（不覆盖）；运行日志落到 `~/.local/share/paper-search/logs/YYYY-MM/<run-id>/`。默认目录固定，不随当前工作目录或 Git 项目变化。`PAPER_SEARCH_ROOT` 可显式覆盖根目录，报告与日志分别写入其 `reports/` 和 `logs/`；`--output` 与 `--log-dir` 可分别指定报告文件和日志目录。
 
 **Done when**:报告**原样完整**交给用户 (不折叠、不缩略、不只给 Top N),落盘路径已告知，stderr 来源错误逐字呈现不隐藏。
 

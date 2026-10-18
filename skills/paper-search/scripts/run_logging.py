@@ -50,7 +50,7 @@ class RunLogger:
     def __init__(self, base_dir: Path | None = None):
         now = datetime.now(timezone.utc)
         run_id = now.strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
-        root = base_dir or artifact_root() / "paper-search-logs"
+        root = base_dir or artifact_root() / "logs"
         self.path = root / now.strftime("%Y-%m") / run_id
         self.path.mkdir(parents=True, exist_ok=False)
         self.started_at = now

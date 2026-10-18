@@ -358,7 +358,7 @@ def _diagnostic_lines(report: dict) -> list[str]:
 
 
 def default_report_path(queries: list[str], base_dir: Path | None = None) -> Path:
-    report_dir = (base_dir or artifact_root()) / "paper-search-reports"
+    report_dir = (base_dir or artifact_root()) / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", "-".join(queries).casefold()).strip("-")
     slug = (slug or "query")[:64]

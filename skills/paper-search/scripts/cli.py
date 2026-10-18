@@ -166,7 +166,7 @@ def _parser() -> argparse.ArgumentParser:
         "--log-dir",
         type=Path,
         default=None,
-        help="Base directory for run logs (default: <artifact-root>/paper-search-logs)",
+        help="Base directory for run logs (default: ~/.local/share/paper-search/logs; PAPER_SEARCH_ROOT overrides the root)",
     )
     parser.add_argument("--min-score", type=int, default=None)
     parser.add_argument(

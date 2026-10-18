@@ -1,12 +1,7 @@
-"""Resolve where run artifacts (reports, logs) are written.
+"""Resolve the shared root for persistent reports and run logs.
 
-Why: the CLI used to always write under Path.cwd(), so invoking it from a
-repository subdirectory scattered paper-search-reports/ and paper-search-logs/
-at every level of the tree. Now the artifact root is, in order:
-
-1. PAPER_SEARCH_ROOT environment variable (explicit override)
-2. nearest ancestor of cwd containing .git (project root)
-3. cwd (fallback, preserves behavior outside repos)
+PAPER_SEARCH_ROOT is an explicit override. The default is independent of cwd
+and repository layout, so searches never scatter artifacts across projects.
 """
 
 from __future__ import annotations
@@ -19,8 +14,4 @@ def artifact_root() -> Path:
     env = os.environ.get("PAPER_SEARCH_ROOT", "").strip()
     if env:
         return Path(env).expanduser()
-    cwd = Path.cwd().resolve()
-    for parent in (cwd, *cwd.parents):
-        if (parent / ".git").exists():
-            return parent
-    return cwd
+    return Path.home() / ".local" / "share" / "paper-search"

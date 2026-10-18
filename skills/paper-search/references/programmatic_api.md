@@ -103,7 +103,7 @@ arXiv 默认使用均衡查询：超过三个 token 的查询要求前两个词�
 - `--min-score N`:丢弃相关性 < N 的结果并打印丢弃数;默认不过滤。
 - `--format text|markdown|json`(`--json` 为兼容别名)、`--raw`(逐来源视图，不去重不排序，仅 text)。
 - `--output PATH`:把选定格式的渲染结果写到不覆盖的新文件;`--report-path PATH` 显式指定 Markdown 报告路径;`--no-save-report` 关闭报告落盘。
-- `--no-log` / `--log-dir DIR`:运行日志开关与目录 (默认 `<artifact-root>/paper-search-logs/YYYY-MM/<run-id>/`,含 `run.json` + `stderr.log`,记录命令、命中数、诊断与耗时，不记密钥)。artifact root = `PAPER_SEARCH_ROOT` 环境变量 → 最近含 `.git` 的祖先目录 → cwd。
+- `--no-log` / `--log-dir DIR`:运行日志开关与目录 (默认 `~/.local/share/paper-search/logs/YYYY-MM/<run-id>/`,含 `run.json` + `stderr.log`,记录命令、命中数、诊断与耗时，不记密钥)。`PAPER_SEARCH_ROOT` 可显式覆盖根目录，日志写入其 `logs/`，报告写入其 `reports/`；默认路径与当前工作目录、Git 项目无关。
 - `--no-parallel`:来源 worker 改串行 (隔离不变，很少需要)。
 
 完整列表与互斥约束见 `--help`。
