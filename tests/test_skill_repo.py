@@ -56,14 +56,20 @@ EXPECTED_SKILLS = {
         "SKILL.md", "agents/openai.yaml", "pyproject.toml",
         "scripts/download_report.py", "scripts/search_and_download_report.py", "uv.lock",
     ],
+    "frontend-design": ["SKILL.md", "agents/openai.yaml"],
+    "diagram-design": [
+        "SKILL.md", "agents/openai.yaml", "LICENSE", "deps.toml",
+        "assets/template.html", "references/export.md", "scripts/self_check.py",
+    ],
 }
-ARCHIVED_SKILLS = {name: EXPECTED_SKILLS.pop(name) for name in ("plot-skill", "report-download")}
+ARCHIVED_SKILLS = {
+    name: EXPECTED_SKILLS.pop(name)
+    for name in ("plot-skill", "report-download", "frontend-design", "diagram-design")
+}
 EXPECTED_SKILLS.update({
     "conventional-commits": ["SKILL.md", "agents/openai.yaml"],
     "document-writing": ["SKILL.md", "agents/openai.yaml"],
-    "frontend-design": ["SKILL.md", "agents/openai.yaml"],
     "peer-sessions": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/overseer.py", "scripts/leader_hook.py"],
-    "diagram-design": ["SKILL.md", "agents/openai.yaml", "LICENSE", "deps.toml", "assets/template.html", "references/export.md", "scripts/self_check.py"],
     "asr": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/setup.sh", "scripts/transcribe.py", "vendor/srt_postproc.py"],
     "figure-viz": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/render.py", "assets/tikz/vizstyle.tex", "assets/mpl/fvstyle.py"],
     "link-get": ["SKILL.md", "agents/openai.yaml", "deps.toml", "scripts/link-get", "scripts/fetch-engine", "scripts/setup.sh", "packs/canvas/pack.toml"],

@@ -50,9 +50,9 @@ check_link() { # $1=链接路径 $2=期望目标（解析后）
     [ -e "$link" ] && fail "$link 存在但不是软链" || fail "$link 缺失"
     return
   fi
-  local real
-  real="$(cd "$(dirname "$link")" && cd "$(dirname "$(readlink "$link")")" 2>/dev/null && pwd)/$(basename "$(readlink "$link")")"
-  if [ "$real" = "$want" ]; then
+  if [ ! -e "$link" ]; then
+    fail "$link → $(readlink "$link")（断链）"
+  elif [ "$link" -ef "$want" ]; then
     ok "$link → $want"
   else
     fail "$link → $(readlink "$link")（期望 $want）"
@@ -95,35 +95,29 @@ fi
 
 # ── 2+3+4. skill 清单、frontmatter、撞名 ──────────────────
 
-skill_names() { # $1=skills 根目录 $2=name 不一致严重度（默认 fail，incubator 传 warn）→ 列出 "<name>\t<dir>"
+declare -a ALL_NAMES=() ALL_LOCS=()
+collect() { # $1=skills 根 $2=位置标签 $3=严重度（incubator 只 warn）
   [ -d "$1" ] || return 0
-  local sev="${2:-fail}"
+  local d name base sev="${3:-fail}"
+  # 在当前 shell 校验并收集，避免进程替换的子 shell 丢失 WARN/FAIL 计数。
   for d in "$1"/*/; do
     [ -f "$d/SKILL.md" ] || continue
-    local name
-    name="$(awk -F': *' '/^name:/{gsub(/\r|"/,"",$2); print $2; exit}' "$d/SKILL.md")"
-    local base
+    name="$(awk -F': *' 'NR == 1 { if ($0 != "---") exit; next } /^---$/ { exit } /^name:/ { gsub(/\r|"/, "", $2); print $2; exit }' "$d/SKILL.md")"
     base="$(basename "$d")"
     if [ -z "$name" ]; then
-      warn "${d}SKILL.md 无 name 字段" >&2
+      "$sev" "${d}SKILL.md 的 frontmatter 无 name 字段"
       name="$base"
     elif [ "$name" != "$base" ]; then
-      "$sev" "${d} 目录名 $base 与 frontmatter name $name 不一致" >&2
+      "$sev" "${d} 目录名 $base 与 frontmatter name $name 不一致"
     fi
-    printf '%s\t%s\n' "$name" "$d"
+    ALL_NAMES+=("$name")
+    ALL_LOCS+=("$2")
   done
 }
 
-declare -a ALL_NAMES=() ALL_LOCS=()
-collect() { # $1=skills 根 $2=位置标签（短标签，如 repo:obsidian）$3=skill_names 严重度
-  while IFS=$'\t' read -r n d; do
-    [ -n "$n" ] || continue
-    ALL_NAMES+=("$n")
-    ALL_LOCS+=("$2")
-  done < <(skill_names "$1" "${3:-}")
-}
-
 hdr "frontmatter name 检查"
+NAME_WARN=$WARN
+NAME_FAIL=$FAIL
 collect "$AGENTS_HOME/skills" "global"
 collect "$AGENTS_HOME/incubator" "incubator" warn
 collect "$HOME/.codex/skills" "codex"
@@ -132,7 +126,7 @@ collect "$HOME/.kimi-code/skills" "kimi"
 for r in $REPOS; do collect "$r/.agents/skills" "repo:$(basename "$r")"; done
 if [ ${#ALL_NAMES[@]} -eq 0 ]; then
   warn "任何位置都没找到 skill"
-else
+elif [ "$WARN" -eq "$NAME_WARN" ] && [ "$FAIL" -eq "$NAME_FAIL" ]; then
   ok "${#ALL_NAMES[@]} 个 SKILL.md 的 name 与目录名一致"
 fi
 
@@ -210,7 +204,7 @@ for r in $REPOS; do
   fi
   if [ -d "$r/.agents/skills" ]; then
     if [ -L "$r/.claude/skills" ]; then
-      ok "$r/.claude/skills 软链存在"
+      check_link "$r/.claude/skills" "$r/.agents/skills"
     else
       fail "$r 有 .agents/skills 但缺 .claude/skills 软链（CC 看不到仓库 skill）"
     fi

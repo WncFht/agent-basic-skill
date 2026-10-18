@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """leader_hook.py — overseer 注入 leader 的控制面 hook。用法见 overseer.py spawn。
 
-事件(参数1): pre(PreToolUse Agent|Task) / post(同) / substart(SubagentStart) / substop(SubagentStop)
-控制文件(参数2): JSON，每事件重读 → overseer 改文件即改策略，零对话。
+事件 (参数 1): pre(PreToolUse Agent|Task) / post(同) / substart(SubagentStart) / substop(SubagentStop)
+控制文件 (参数 2): JSON，每事件重读 → overseer 改文件即改策略，零对话。
 
 policy 键：
   deny_types        list[str]   这些 subagent_type 的派生直接 deny
@@ -13,10 +13,10 @@ policy 键：
 所有事件追加写入 <control>.events.jsonl（遥测旁路）。
 """
 
-import datetime
 import json
 import os
 import sys
+from datetime import UTC, datetime
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "pre"
 control = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -35,9 +35,7 @@ try:
         f.write(
             json.dumps(
                 {
-                    "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(
-                        timespec="seconds"
-                    ),
+                    "ts": datetime.now(UTC).isoformat(timespec="seconds"),
                     "hook": mode,
                     "tool": payload.get("tool_name"),
                     "agent_id": payload.get("agent_id"),

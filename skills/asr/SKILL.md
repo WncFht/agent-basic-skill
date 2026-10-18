@@ -64,7 +64,7 @@ bash scripts/setup.sh --gpu all             # 全部,含两条 GPU 层
 
 值得知道的参数：
 
-- `--backend auto|sherpa|parakeet_cpp|qwen` — auto(默认):GPU 工件装齐且有显卡就走 GPU 车道，否则 sherpa CPU;GPU 后端与语言绑定 (en→parakeet_cpp,zh→qwen)
+- `--backend auto|sherpa|parakeet_cpp|qwen` — auto(默认):本机平台的 GPU 工件装齐且有显卡就走 GPU 车道，否则 sherpa CPU；其他平台的二进制不参与自动选择。GPU 后端与语言绑定 (en→parakeet_cpp,zh→qwen)
 - `--model-dir PATH` — 不走 `--lang` 默认，直接用任意兼容的 sherpa-onnx 模型目录
 - `--models-dir DIR` 或 `ASR_MODELS` — 挪模型根目录 (默认 `<skill>/models`)
 - `--vad-threshold 0.3` — 音量小/噪声大、默认 0.5 漏检语音时调低

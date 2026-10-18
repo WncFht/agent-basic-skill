@@ -6,24 +6,24 @@
 
 ## 技能列表
 
-| Skill | 用途 |
-| --- | --- |
-| [memory-skill](skills/memory-skill/SKILL.md) | 会话启动时读取/回写 curated memory repo（机器、repo、跨仓上下文）；自带 init/sync/resolve 脚本与模板，代理感知的 GitHub 同步。 |
-| [paper-note-skill](skills/paper-note-skill/SKILL.md) | 把 arXiv LaTeX 源码整理成双语批注阅读版，产出可编译 PDF（英句后跟中文翻译、tcolorbox 摘要、函数块 pnotes）。 |
-| [asr](skills/asr/SKILL.md) | 将音频、视频转录为带时间戳的文字与 SRT 字幕。 |
-| [figure-viz](skills/figure-viz/SKILL.md) | 用 TikZ 绘制研究结构图，用 matplotlib 绘制可复现的数据图表。 |
-| [link-get](skills/link-get/SKILL.md) | 获取网页正文、视频字幕、论文 LaTeX 源或媒体文件。 |
-| [paper-search](skills/paper-search/SKILL.md) | 在 arXiv、DBLP、OpenAlex、OpenReview、Semantic Scholar 和 Crossref 检索论文。 |
-| [video-render-pdf](skills/video-render-pdf/SKILL.md) | 从视频、字幕与关键帧生成中文 LaTeX 课程笔记及 PDF。 |
-| [setup-toolchain](skills/setup-toolchain/SKILL.md) | 配置格式化、lint、pre-commit、CI、agent 入口和 Markdown 预览环境。 |
-| [skill-management](skills/skill-management/SKILL.md) | 维护多 CLI 共用的 skill 与 AGENTS.md，检查软链、命名和依赖。 |
-| [document-writing](skills/document-writing/SKILL.md) | 编写技术文档、论文笔记和伪代码。 |
-| [conventional-commits](skills/conventional-commits/SKILL.md) | 编写符合 Conventional Commits 的提交信息。 |
-| [peer-sessions](skills/peer-sessions/SKILL.md) | 感知和编排本机其他 Claude Code 会话。 |
-| [frontend-design](skills/frontend-design/SKILL.md) | 设计有明确视觉方向的 Web 界面。 |
-| [diagram-design](skills/diagram-design/SKILL.md) | 创建架构图、流程图和数据图。 |
+| Skill | 用途 | 状态 |
+| --- | --- | --- |
+| [memory-skill](skills/memory-skill/SKILL.md) | 会话启动时读取/回写 curated memory repo（机器、repo、跨仓上下文）；自带 init/sync/resolve 脚本与模板，代理感知的 GitHub 同步。 | 正在维护 |
+| [paper-note-skill](skills/paper-note-skill/SKILL.md) | 把 arXiv LaTeX 源码整理成双语批注阅读版，产出可编译 PDF（英句后跟中文翻译、tcolorbox 摘要、函数块 pnotes）。 | 正在维护 |
+| [asr](skills/asr/SKILL.md) | 将音频、视频转录为带时间戳的文字与 SRT 字幕。 | 正在维护 |
+| [figure-viz](skills/figure-viz/SKILL.md) | 用 TikZ 绘制研究结构图，用 matplotlib 绘制可复现的数据图表。 | 正在维护 |
+| [link-get](skills/link-get/SKILL.md) | 获取网页正文、视频字幕、论文 LaTeX 源或媒体文件。 | 正在维护 |
+| [paper-search](skills/paper-search/SKILL.md) | 在 arXiv、DBLP、OpenAlex、OpenReview、Semantic Scholar 和 Crossref 检索论文。 | 正在维护 |
+| [video-render-pdf](skills/video-render-pdf/SKILL.md) | 从视频、字幕与关键帧生成中文 LaTeX 课程笔记及 PDF。 | 正在维护 |
+| [setup-toolchain](skills/setup-toolchain/SKILL.md) | 配置格式化、lint、pre-commit、CI、agent 入口和 Markdown 预览环境。 | 正在维护 |
+| [skill-management](skills/skill-management/SKILL.md) | 维护多 CLI 共用的 skill 与 AGENTS.md，检查软链、命名和依赖。 | 正在维护 |
+| [document-writing](skills/document-writing/SKILL.md) | 编写技术文档、论文笔记和伪代码。 | 正在维护 |
+| [conventional-commits](skills/conventional-commits/SKILL.md) | 编写符合 Conventional Commits 的提交信息。 | 正在维护 |
+| [peer-sessions](skills/peer-sessions/SKILL.md) | 感知和编排本机其他 Claude Code 会话。 | 正在维护 |
+| [frontend-design](vendor/frontend-design/SKILL.md) | 设计有明确视觉方向的 Web 界面。 | 停止使用 |
+| [diagram-design](vendor/diagram-design/SKILL.md) | 创建架构图、流程图和数据图。 | 停止使用 |
 
-plot-skill 和 report-download 已移入 [`vendor/`](vendor/README.md)，保留历史内容，不参与默认安装。图表任务使用 figure-viz。
+plot-skill、report-download、frontend-design 和 diagram-design 已移入 [`vendor/`](vendor/README.md)，保留历史内容，不参与安装。图表任务使用 figure-viz。
 
 ## 使用方法
 
@@ -64,7 +64,3 @@ rsync -a agents/ "$HOME/.codex/agents/"
 paper-note-skill 双语批注 PDF 样例：[paper_note_bilingual.pdf](assets/paper_note_bilingual.pdf)
 
 figure-viz 图表示例：[`skills/figure-viz/scripts/examples/`](skills/figure-viz/scripts/examples/)
-
-## 按需安装的 skill
-
-`peer-sessions`、`frontend-design` 和 `diagram-design` 保存在 `skills/`，不包含在上述默认安装命令中。只有明确需要时才按名称安装。

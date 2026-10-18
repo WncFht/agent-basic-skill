@@ -54,4 +54,4 @@ test -f ~/.agents/skills/link-get/scripts/link-get
 
 ## Optional skills excluded from the default Codex installation
 
-`peer-sessions`, `frontend-design`, and `diagram-design` are distributed in `skills/` but omitted from the installation commands above. Install them by name only when explicitly requested.
+`peer-sessions` is distributed in `skills/` but omitted from the installation commands above. `frontend-design` and `diagram-design` are archived in `vendor/` and are not installable by the installer.

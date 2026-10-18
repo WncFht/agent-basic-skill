@@ -1,6 +1,5 @@
 # asr 外部依赖 — skill-management/scripts/skill_deps.py 消费。
-# 平台差异：check 一律写平台无关命令；GPU 档按平台限定（zh GPU = CUDA-only，
-# 在 macOS 显示 N/A；EN GPU = Linux CUDA / macOS Metal，check 用 glob 兼容两种产物名）。
+# GPU 检查按平台匹配二进制与解释器，避免把其他平台的残留工件误判为可用。
 
 [[dep]]
 name = "asr-venv"
@@ -21,13 +20,13 @@ install = { linux = "sudo pacman -S --needed ffmpeg", darwin = "brew install ffm
 
 [[dep]]
 name = "asr-gpu-en"
-check = "compgen -G \"$HOME/.agents/skills/asr/bin/parakeet-*/parakeet-cli\" >/dev/null"
+check = { linux = 'compgen -G "$HOME/.agents/skills/asr/bin/parakeet-*-linux-*/parakeet-cli" >/dev/null', darwin = 'compgen -G "$HOME/.agents/skills/asr/bin/parakeet-*-macos-*/parakeet-cli" >/dev/null' }
 optional = true   # EN GPU 档：Linux CUDA / macOS Metal
 install = "bash ~/.agents/skills/asr/scripts/setup.sh --gpu en"
 upgrade = "bash ~/.agents/skills/asr/scripts/setup.sh --gpu en"
 
 [[dep]]
 name = "asr-gpu-zh"
-check = { linux = "test -x $HOME/.agents/skills/asr/.venv-qwen/bin/python" }   # zh GPU 档 CUDA-only，macOS 不适用
+check = { linux = "test -x $HOME/.agents/skills/asr/.venv-qwen/bin/python", darwin = "test -x $HOME/.agents/skills/asr/.venv-mlx/bin/python" }
 optional = true
-install = { linux = "bash ~/.agents/skills/asr/scripts/setup.sh --gpu zh" }
+install = "bash ~/.agents/skills/asr/scripts/setup.sh --gpu zh"

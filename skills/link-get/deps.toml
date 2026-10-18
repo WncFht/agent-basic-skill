@@ -23,10 +23,9 @@ install = "uv tool install yt-dlp"
 upgrade = "uv tool upgrade yt-dlp"
 
 [[dep]]
-name = "defuddle"
-check = "npx -y defuddle --version"
-install = "true   # npx 按需拉取，无需预装"
-upgrade = "true"
+name = "npx (defuddle)"
+check = "command -v npx"   # 只读检查运行器；defuddle 在实际抓取时由 npx 按需下载
+install = { linux = "sudo pacman -S --needed npm", darwin = "brew install node" }
 
 [[dep]]
 name = "BBDown"

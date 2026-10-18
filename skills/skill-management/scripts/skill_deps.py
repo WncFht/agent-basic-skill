@@ -57,9 +57,8 @@ def load_manifests():
         try:
             with open(f, "rb") as fh:
                 data = tomllib.load(fh)
-        except Exception as e:
-            print(f"  !! {f} 解析失败: {e}", file=sys.stderr)
-            continue
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            sys.exit(f"  !! {f} 读取或解析失败: {e}")
         out.append((base, data.get("dep", [])))
     return out
 

@@ -688,16 +688,19 @@ def _default_bin_dir():
     """Newest bundle dir under bin/ matching this platform.
 
     setup.sh picks the release asset per uname (linux-cuda-x64,
-    macos-metal-arm64); scan bin/parakeet-*/ so transcribe works no matter
-    which asset landed. Fallback is the linux path for the error message."""
+    macos-metal-arm64). Ignore bundles for other platforms so auto falls
+    back to sherpa when only a foreign binary is installed."""
     bundles = sorted(p.parent for p in SKILL_ROOT.glob("bin/parakeet-*/parakeet-cli"))
-    if not bundles:
-        return SKILL_ROOT / CPP_BIN_REL
     tag = "macos" if sys.platform == "darwin" else "linux"
     for b in reversed(bundles):  # newest version sort-last
         if tag in b.name:
             return b
-    return bundles[-1]
+    fallback = (
+        CPP_BIN_REL.replace("linux-cuda-x64", "macos-metal-arm64")
+        if tag == "macos"
+        else CPP_BIN_REL
+    )
+    return SKILL_ROOT / fallback
 
 
 def _has_accel():

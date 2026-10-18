@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.9"
-# ///
 """overseer.py — overseer → leaders → subagents 的最小控制面。
 
 子命令：
@@ -19,47 +16,48 @@
 """
 
 import argparse
-import glob
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-HOME = os.path.expanduser("~")
-SESSIONS = f"{HOME}/.claude/sessions"
-JOBS = f"{HOME}/.claude/jobs"
-OVDIR = f"{HOME}/.claude/overseer"
-HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leader_hook.py")
-TRANSCRIPT = f"{HOME}/.agents/skills/session-transcripts/scripts/session_transcript.py"
+HOME = Path.home()
+SESSIONS = HOME / ".claude/sessions"
+JOBS = HOME / ".claude/jobs"
+OVDIR = HOME / ".claude/overseer"
+HOOK = Path(__file__).resolve().with_name("leader_hook.py")
+TRANSCRIPT = HOME / ".agents/skills/session-transcripts/scripts/session_transcript.py"
 
 
 def _load_json(path):
-    with open(path) as f:
+    with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
 def registry():
     out = []
-    for f in glob.glob(f"{SESSIONS}/*.json"):
+    for path in SESSIONS.glob("*.json"):
         try:
-            d = _load_json(f)
-            d["_file"] = f
+            d = _load_json(path)
+            d["_file"] = str(path)
             out.append(d)
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError):
             pass
     return out
 
 
 def jobs():
     out = {}
-    for f in glob.glob(f"{JOBS}/*/state.json"):
+    for path in JOBS.glob("*/state.json"):
         try:
-            d = _load_json(f)
-            d["_id"] = f.split("/")[-2]
+            d = _load_json(path)
+            d["_id"] = path.parent.name
             out[d["_id"]] = d
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError):
             pass
     return out
 
@@ -85,7 +83,7 @@ def resolve(name):
 
 
 def token_for(pid):
-    ks = glob.glob(f"{SESSIONS}/{pid}.*.key")
+    ks = list(SESSIONS.glob(f"{pid}.*.key"))
     return _load_json(ks[0])["peerToken"] if ks else None
 
 
@@ -96,15 +94,15 @@ def cmd_spawn(a):
             f"error: '{a.name}' already live (pid {ent['pid']}) — pick another name"
         )
     os.makedirs(OVDIR, exist_ok=True)
-    settings = f"{OVDIR}/{a.name}.settings.json"
-    control = f"{OVDIR}/{a.name}.control.json"
+    settings = OVDIR / f"{a.name}.settings.json"
+    control = OVDIR / f"{a.name}.control.json"
 
     # 不能用 sys.executable：uv run 下它会指向临时 build venv，spawn 后即失效。
     # leader_hook.py 只用 stdlib，PATH 上的 python3 即可。
     def hookcfg(ev):
         return [{"type": "command", "command": f"python3 {HOOK} {ev} {control}"}]
 
-    with open(settings, "w") as sf:
+    with settings.open("w", encoding="utf-8") as sf:
         json.dump(
             {
                 "crossSessionInbound": "accept",
@@ -120,8 +118,8 @@ def cmd_spawn(a):
             sf,
             indent=2,
         )
-    if not os.path.exists(control):
-        with open(control, "w") as cf:
+    if not control.exists():
+        with control.open("w", encoding="utf-8") as cf:
             json.dump(
                 {
                     "deny_types": [],
@@ -166,22 +164,19 @@ def cmd_push(a):
     if not ent:
         sys.exit(f"error: no live session named '{a.name}'")
     tok = token_for(ent["pid"])
-    import socket
-
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(5)
-    s.connect(ent["messagingSocketPath"])
-    if tok:
-        s.sendall(json.dumps({"type": "auth", "token": tok}).encode() + b"\n")
-        time.sleep(0.2)
-    s.sendall(
-        json.dumps(
-            {"type": "user", "message": {"role": "user", "content": a.text}}
-        ).encode()
-        + b"\n"
-    )
-    time.sleep(0.3)
-    s.close()
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(5)
+        sock.connect(ent["messagingSocketPath"])
+        if tok:
+            sock.sendall(json.dumps({"type": "auth", "token": tok}).encode() + b"\n")
+            time.sleep(0.2)
+        sock.sendall(
+            json.dumps(
+                {"type": "user", "message": {"role": "user", "content": a.text}}
+            ).encode()
+            + b"\n"
+        )
+        time.sleep(0.3)
     print(
         f"pushed to {a.name} (pid {ent['pid']}). 未带身份前缀——建议在 text 里自带 [overseer→{a.name}]。"
     )
@@ -194,7 +189,7 @@ def cmd_park(a):
         sys.exit(f"error: '{a.name}' has no job id (only bg sessions can be parked)")
     print(
         subprocess.run(
-            ["claude", "stop", jid], capture_output=True, text=True
+            ["claude", "stop", jid], capture_output=True, text=True, check=False
         ).stdout.strip()
     )
     print("note: 进程驻留且仍可收消息；要真正回收用 kill")
@@ -205,13 +200,14 @@ def cmd_kill(a):
     if not ent:
         sys.exit(f"error: no live session named '{a.name}'")
     os.kill(ent["pid"], signal.SIGTERM)
-    f = ent["_file"]
+    registry_file = Path(ent["_file"])
     for _ in range(50):
-        if not os.path.exists(f):
+        if not registry_file.exists():
             break
         time.sleep(0.1)
     print(
-        f"killed {a.name} (pid {ent['pid']}), registry {'cleared' if not os.path.exists(f) else 'still present'}"
+        f"killed {a.name} (pid {ent['pid']}), registry "
+        f"{'cleared' if not registry_file.exists() else 'still present'}"
     )
 
 
@@ -225,22 +221,25 @@ def cmd_revive(a):
     if not sid:
         sys.exit(f"error: no job record for '{a.name}' — nothing to resume")
     r = subprocess.run(
-        ["claude", "--bg", "--resume", sid], capture_output=True, text=True
+        ["claude", "--bg", "--resume", sid],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     sys.stdout.write(r.stdout + r.stderr)
 
 
 def cmd_policy(a):
-    control = f"{OVDIR}/{a.name}.control.json"
-    if not os.path.exists(control):
+    control = OVDIR / f"{a.name}.control.json"
+    if not control.exists():
         sys.exit(f"error: {control} not found — was '{a.name}' spawned via overseer?")
     p = _load_json(control)
     try:
         v = json.loads(a.value)
-    except Exception:
+    except json.JSONDecodeError:
         v = a.value
     p[a.key] = v
-    with open(control, "w") as cf:
+    with control.open("w", encoding="utf-8") as cf:
         json.dump(p, cf, indent=2, ensure_ascii=False)
     print(
         f"{a.name}: {a.key} = {json.dumps(v, ensure_ascii=False)}  (hooks 下次事件生效)"
@@ -248,8 +247,8 @@ def cmd_policy(a):
 
 
 def delegate(script_args):
-    if not os.path.exists(TRANSCRIPT):
-        sys.exit("error: sibling skill session-transcripts not found at " + TRANSCRIPT)
+    if not TRANSCRIPT.exists():
+        sys.exit(f"error: sibling skill session-transcripts not found at {TRANSCRIPT}")
     os.execvp("uv", ["uv", "run", TRANSCRIPT, *script_args])
 
 

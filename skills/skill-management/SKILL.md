@@ -131,4 +131,4 @@ bash ~/.agents/skills/skill-management/scripts/skill_doctor.sh              # �
 bash ~/.agents/skills/skill-management/scripts/skill_doctor.sh <repo> ...   # 追加/指定要查的仓库
 ```
 
-检查项：5 条软链完好且指向 `~/.agents`；CC `instructionFiles` 档位为 `both`；每个 SKILL.md 的 frontmatter `name` 与目录名一致；跨位置同名（全局/仓库/codex 私有）；保留名冲突；vault↔全局副本漂移；仓库根 AGENTS.md/CLAUDE.md 共存；`deps.toml` 声明的外部依赖齐全；全局 skill 的 `agents/openai.yaml` 在位（WARN）。WARN 不阻塞，FAIL 需要修。
+检查项：5 条软链有效且指向 `~/.agents`；CC `instructionFiles` 档位为 `both`；每个 SKILL.md 的 frontmatter `name` 与目录名一致；跨位置同名（全局/仓库/codex 私有）；保留名冲突；vault↔全局副本漂移；仓库根 AGENTS.md/CLAUDE.md 共存；`deps.toml` 声明的外部依赖齐全；全局 skill 的 `agents/openai.yaml` 在位（WARN）。WARN 不阻塞，FAIL 需要修。已启用 skill 的 name 缺失或不匹配会计入 FAIL 并返回非零退出码；incubator 同类问题只记 WARN。依赖清单读取或 TOML 解析失败会直接报错，不按依赖齐全处理。

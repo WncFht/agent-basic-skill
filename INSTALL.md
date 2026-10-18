@@ -44,4 +44,4 @@ memory-skill 安装后还需要初始化或接管一个 memory 数据仓：
 
 ## 按需安装的 skill
 
-`peer-sessions`、`frontend-design` 和 `diagram-design` 保存在 `skills/`，不包含在上述默认安装命令中。只有明确需要时才按名称安装。
+`peer-sessions` 保存在 `skills/`，不包含在上述默认安装命令中。`frontend-design` 和 `diagram-design` 已移入 `vendor/`，安装器不会安装这两个已停止使用的 skill。
