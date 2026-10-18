@@ -5,8 +5,8 @@
 ## 推荐方式
 
 ```bash
-python scripts/install_skill.py memory-skill --dest-root ~/.agents/skills
-python scripts/install_skill.py paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
+python scripts/install_skill.py asr --dest-root ~/.agents/skills
+python scripts/install_skill.py asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
 ```
 
 安装器的行为：
@@ -16,7 +16,7 @@ python scripts/install_skill.py paper-note-skill asr figure-viz link-get paper-s
 
 安装器保留原有默认目的目录 `$CODEX_HOME/skills`（通常是 `~/.codex/skills`）。新增 skill 的依赖声明和跨 skill 调用使用 `~/.agents/skills/<name>/`，因此显式传入 `--dest-root ~/.agents/skills`。共享目录已有同名版本时按需更新，避免在私有目录重复安装。
 
-安装不下载模型或创建虚拟环境。按各 skill 的 `SKILL.md` 与 `deps.toml` 初始化外部依赖。plot-skill 与 report-download 在 `vendor/` 中归档，安装器不再按这两个名称安装。
+安装不下载模型或创建虚拟环境。按各 skill 的 `SKILL.md` 与 `deps.toml` 初始化外部依赖。停止使用的 skill 在 `vendor/` 中归档，安装器不再按这些名称安装，完整列表见 [vendor/README.md](vendor/README.md)。
 
 手动方式也完全可以——复制整个目录即可：
 
@@ -32,16 +32,6 @@ mkdir -p "$HOME/.codex/agents"
 rsync -a agents/ "$HOME/.codex/agents/"
 ```
 
-## memory-skill 首次使用
-
-memory-skill 安装后还需要初始化或接管一个 memory 数据仓：
-
-```bash
-~/.agents/skills/memory-skill/scripts/init-memory.sh --memory-root ~/.codex/memory
-```
-
-详见 [skills/memory-skill/README.md](skills/memory-skill/README.md)。
-
 ## 按需安装的 skill
 
-`peer-sessions` 保存在 `skills/`，不包含在上述默认安装命令中。`frontend-design` 和 `diagram-design` 已移入 `vendor/`，安装器不会安装这两个已停止使用的 skill。
+`peer-sessions` 保存在 `skills/`，不包含在上述默认安装命令中。`memory-skill`、`paper-note-skill`、`frontend-design` 和 `diagram-design` 已停止使用，保存在 `vendor/`，不参与安装。归档不会自动删除已安装的副本。

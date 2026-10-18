@@ -178,3 +178,11 @@ problems = fv.audit(fig)       # fig.canvas.draw() 后跑全部 RENDER_RULES
 7. 交付预览 PNG、一句话机制说明、可编辑源文件（tex/py）与矢量产物路径。
 
 不要交付仅语法能编译的图——数学正确与视觉对齐缺一不可。
+
+## 来源与致谢
+
+本 skill 参考了 wdkns 的 wdkns-skills[^wdkns-skills] 中 tensor-formula-viz 的实现。
+
+### 参考文献
+
+[^wdkns-skills]: wdkns. wdkns-skills. GitHub. [wdkns/wdkns-skills](https://github.com/wdkns/wdkns-skills).

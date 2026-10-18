@@ -100,3 +100,11 @@ description: 从 YouTube、Bilibili 或 SJTU Canvas 课堂实录的讲座、教�
 - `references/toolchain.md`：工具链选型理由与维护规则
 - `references/digest-agent-prompt.md`：长视频分段精读 subagent 的 prompt 模板
 - 兄弟 skill：素材获取走 `~/.agents/skills/link-get`（`--media` / `<canvas-url>` 形态）；重绘走 `~/.agents/skills/figure-viz`；转写走 `~/.agents/skills/asr`
+
+## 来源与致谢
+
+本 skill 参考了 wdkns 的 wdkns-skills[^wdkns-skills] 中 youtube-render-pdf、bilibili-render-pdf 的实现。
+
+### 参考文献
+
+[^wdkns-skills]: wdkns. wdkns-skills. GitHub. [wdkns/wdkns-skills](https://github.com/wdkns/wdkns-skills).

@@ -64,7 +64,7 @@ EXPECTED_SKILLS = {
 }
 ARCHIVED_SKILLS = {
     name: EXPECTED_SKILLS.pop(name)
-    for name in ("plot-skill", "report-download", "frontend-design", "diagram-design")
+    for name in ("memory-skill", "paper-note-skill", "plot-skill", "report-download", "frontend-design", "diagram-design")
 }
 EXPECTED_SKILLS.update({
     "conventional-commits": ["SKILL.md", "agents/openai.yaml"],

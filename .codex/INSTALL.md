@@ -14,7 +14,7 @@ Clone the repository, then install the recommended bundle:
 ```bash
 git clone https://github.com/WncFht/agent-basic-skill.git ~/src/agent-basic-skill
 cd ~/src/agent-basic-skill
-python scripts/install_skill.py memory-skill paper-note-skill asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
+python scripts/install_skill.py asr figure-viz link-get paper-search video-render-pdf setup-toolchain skill-management document-writing conventional-commits --dest-root ~/.agents/skills
 ```
 
 The installer replaces each named destination directory. Save local changes before updating. If these skills already exist in `~/.agents/skills`, update only the ones you intend to replace. Avoid installing duplicate copies under `~/.codex/skills`.
@@ -40,7 +40,7 @@ The installer retains `$CODEX_HOME/skills` as its default destination for compat
 
 ## Archived skills
 
-`plot-skill` and `report-download` are preserved under `vendor/`. They are excluded from the active bundle and cannot be installed by name with the installer. Use `figure-viz` for chart work.
+`memory-skill`, `paper-note-skill`, `plot-skill`, `report-download`, `frontend-design` and `diagram-design` are preserved under `vendor/`. They are excluded from the active bundle and cannot be installed by name with the installer. Use `figure-viz` for chart work.
 
 Older installations may have a bundle symlink at `~/.agents/skills/agent-basic-skill`. Remove that symlink after verifying the direct installations, so each skill has one active entry. Previously installed copies of retired skills are not removed automatically.
 
@@ -54,4 +54,4 @@ test -f ~/.agents/skills/link-get/scripts/link-get
 
 ## Optional skills excluded from the default Codex installation
 
-`peer-sessions` is distributed in `skills/` but omitted from the installation commands above. `frontend-design` and `diagram-design` are archived in `vendor/` and are not installable by the installer.
+`peer-sessions` is distributed in `skills/` but omitted from the installation commands above. See [vendor/README.md](../vendor/README.md) for archived skills excluded from installation.
